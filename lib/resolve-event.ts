@@ -21,6 +21,13 @@ const TEST_SLUG_COOKIE = "otm_test_slug";
  * test event. Remove `pathSlug`, this cookie fallback, `middleware.ts`, and
  * `app/[slug]/page.tsx` together once the test deployment is torn down —
  * every real (subdomain) request is untouched by any of this.
+ *
+ * Doesn't require `subdomain` to be empty before trying the cookie: a bare
+ * Vercel preview host (`otomatiks-six.vercel.app`) parses as if
+ * "otomatiks-six" were a subdomain (see `extractSubdomain`'s doc comment),
+ * but no event will ever resolve for it — so the only thing that actually
+ * matters here is whether an event was found yet, not why the lookup so
+ * far came up empty.
  */
 export async function resolveEvent(pathSlug?: string) {
   const headersList = await headers();
@@ -32,7 +39,7 @@ export async function resolveEvent(pathSlug?: string) {
     event = await getEventBySlug(pathSlug);
   }
 
-  if (!event && !subdomain && !pathSlug) {
+  if (!event && !pathSlug) {
     const cookieSlug = (await cookies()).get(TEST_SLUG_COOKIE)?.value;
     if (cookieSlug) event = await getEventBySlug(cookieSlug);
   }

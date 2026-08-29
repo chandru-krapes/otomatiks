@@ -1,5 +1,4 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { extractSubdomain } from "@/lib/subdomain";
 
 /**
  * TEMPORARY test-only middleware. On a real deployment the event comes from
@@ -20,6 +19,14 @@ import { extractSubdomain } from "@/lib/subdomain";
  * Delete this file (and the cookie fallback in `lib/resolve-event.ts`) once
  * the test deployment is torn down — every real (subdomain) request is
  * untouched by this.
+ *
+ * Deliberately doesn't gate on `extractSubdomain()` being null: a bare
+ * Vercel preview URL (`otomatiks-six.vercel.app`) has three dot-separated
+ * labels just like a real `robotica.otomatiks.com` would, so
+ * `extractSubdomain` reads "otomatiks-six" back as if it were a subdomain
+ * even though no event will ever resolve for it. Stamping the cookie
+ * unconditionally is harmless either way — `resolveEvent()` only reads it
+ * once its own subdomain lookup has already come up empty.
  */
 const RESERVED_TOP_LEVEL_PATHS = new Set([
   "admin", "book", "bookings", "checkout", "community", "dashboard",
@@ -30,9 +37,6 @@ const RESERVED_TOP_LEVEL_PATHS = new Set([
 const TEST_SLUG_COOKIE = "otm_test_slug";
 
 export function middleware(request: NextRequest) {
-  const subdomain = extractSubdomain(request.headers.get("host"));
-  if (subdomain) return NextResponse.next();
-
   const segments = request.nextUrl.pathname.split("/").filter(Boolean);
   if (segments.length === 1 && !RESERVED_TOP_LEVEL_PATHS.has(segments[0])) {
     const response = NextResponse.next();
