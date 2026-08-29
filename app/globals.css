@@ -1,0 +1,943 @@
+@import url('https://fonts.googleapis.com/css2?family=Boldonse&family=BBH+Bartle&display=swap');
+@import "tailwindcss";
+@import "react-day-picker/style.css";
+
+:root {
+  --background: #ffffff;
+  --foreground: #14151a;
+  --primary: #066aab;
+  --secondary: #c9042d;
+  --accent: #7409f6;
+  --accent-foreground: #ffffff;
+  --surface: #0d0d12;
+  --surface-border: rgba(255, 255, 255, 0.08);
+  --on-surface: #f5f5f7;
+  --muted: #75757f;
+
+  /* -- Design system: surfaces & rhythm --
+     Section backgrounds alternate between these so the page isn't a flat
+     white-on-white stack. Derived from the existing brand tokens, so an
+     event's `theme_color` override still flows through them. */
+  --tint-cool: #f4f8fc;
+  --tint-warm: #fdf6f7;
+  --hairline: color-mix(in srgb, var(--primary) 10%, transparent);
+  --hairline-strong: color-mix(in srgb, var(--primary) 20%, transparent);
+
+  /* -- Design system: elevation --
+     Three-step shadow scale keyed to the brand blue rather than neutral
+     black, so a lifted card reads as lifted rather than dirty. */
+  --elev-1: 0 1px 2px rgba(6, 106, 171, 0.06), 0 4px 14px rgba(6, 106, 171, 0.05);
+  --elev-2: 0 2px 6px rgba(6, 106, 171, 0.07), 0 12px 32px rgba(6, 106, 171, 0.09);
+  --elev-3: 0 6px 16px rgba(6, 106, 171, 0.09), 0 24px 60px rgba(6, 106, 171, 0.13);
+
+  /* -- Motion system --
+     Three durations, three roles. Micro-interactions (hover, focus, press)
+     use --dur-fast; anything that moves a card, menu or control uses
+     --dur-med; hero and section reveals use --dur-slow. Easing is shared so
+     unrelated components still feel like one product. */
+  --dur-fast: 160ms;
+  --dur-med: 320ms;
+  --dur-slow: 700ms;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  /* Slight overshoot. Used sparingly, only for elements that appear on
+     demand (an attendee card being added, a badge popping in). */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-surface: var(--surface);
+  --color-surface-border: var(--surface-border);
+  --color-on-surface: var(--on-surface);
+  --color-muted: var(--muted);
+  --color-tint-cool: var(--tint-cool);
+  --color-tint-warm: var(--tint-warm);
+  --color-hairline: var(--hairline);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-baloo);
+  --font-boldonse: 'Boldonse', sans-serif;
+  --font-bartle: 'BBH Bartle', sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/*
+ * Autofill override. Chrome/Safari paint a saved-credential field with their
+ * own opaque background (a pale yellow/white) the instant it's autofilled or
+ * even just suggested, ignoring whatever `background`/`color` this stylesheet
+ * set — which is invisible-on-invisible on any field styled for a dark
+ * ground (e.g. the admin console's sign-in form: light text meant for a dark
+ * fill suddenly sits on the browser's own light fill). The oversized
+ * `transition-delay` keeps that forced background from ever visually
+ * painting, and pinning `-webkit-text-fill-color` to `currentColor` makes the
+ * text keep using whatever `color` the input already had, autofilled or not.
+ */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: currentColor !important;
+  transition: background-color 600000s 0s, color 600000s 0s;
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(14px);
+  border: 1px solid color-mix(in srgb, var(--primary) 14%, white);
+  box-shadow: 0 18px 50px rgba(6, 106, 171, 0.08);
+  /* backdrop-filter is expensive to recompute; isolating paint to this
+     element's own bounds keeps that cost from spreading to the rest of the
+     layout on every scroll frame. */
+  contain: paint;
+}
+
+.ghost-stroke {
+  color: transparent;
+  -webkit-text-stroke: 1px color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+@keyframes bounce-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.animate-bounce-y {
+  animation: bounce-y 2.2s ease-in-out infinite;
+}
+
+/* Every anchor-scroll target gets breathing room under the sticky header. */
+section[id] {
+  scroll-margin-top: 5.5rem;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -18px, 0);
+  }
+}
+
+.animate-float {
+  animation: float 7s ease-in-out infinite;
+}
+
+.animate-float-slow {
+  animation: float 11s ease-in-out infinite;
+}
+
+/*
+ * Organic, slowly-morphing blob used for liquid/glassmorphism accents.
+ * The shape itself is a static organic border-radius; the animation only
+ * ever touches `transform`, which the compositor can run on its own thread.
+ * (Animating `border-radius` looks nice but forces a main-thread repaint of
+ * every blurred blob on every single frame, which is what made scrolling
+ * feel hangy — this keeps the same drifting motion at a fraction of the cost.)
+ */
+/* Grouping new animated blob classes to share the organic border-radius styling */
+.animate-blob,
+.animate-blob-slow,
+.animate-blob-1,
+.animate-blob-2,
+.animate-blob-3,
+.animate-blob-4 {
+  border-radius: 42% 58% 65% 35% / 45% 45% 55% 55%;
+  will-change: transform;
+}
+
+@keyframes blob {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  33% {
+    transform: translate3d(8px, -12px, 0) scale(1.08);
+  }
+  66% {
+    transform: translate3d(-10px, 8px, 0) scale(0.94);
+  }
+}
+
+.animate-blob {
+  animation: blob 9s ease-in-out infinite;
+}
+
+.animate-blob-slow {
+  animation: blob 13s ease-in-out infinite reverse;
+}
+
+@keyframes blob-1 {
+  0%, 100% { transform: translate3d(0px, 0px, 0) scale(1); }
+  33% { transform: translate3d(50px, -80px, 0) scale(1.15); }
+  66% { transform: translate3d(-30px, 40px, 0) scale(0.85); }
+}
+@keyframes blob-2 {
+  0%, 100% { transform: translate3d(0px, 0px, 0) scale(1); }
+  33% { transform: translate3d(-60px, 60px, 0) scale(1.2); }
+  66% { transform: translate3d(40px, -30px, 0) scale(0.9); }
+}
+@keyframes blob-3 {
+  0%, 100% { transform: translate3d(0px, 0px, 0) scale(1); }
+  33% { transform: translate3d(80px, 40px, 0) scale(1.1); }
+  66% { transform: translate3d(-50px, -60px, 0) scale(0.8); }
+}
+@keyframes blob-4 {
+  0%, 100% { transform: translate3d(0px, 0px, 0) scale(1); }
+  33% { transform: translate3d(-40px, -70px, 0) scale(1.25); }
+  66% { transform: translate3d(60px, 50px, 0) scale(0.85); }
+}
+
+@keyframes marquee {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 28s linear infinite;
+  will-change: transform;
+}
+
+.marquee-wrapper:hover .animate-marquee {
+  animation-play-state: paused;
+}
+
+.animate-blob-1 {
+  animation: blob-1 14s ease-in-out infinite;
+}
+.animate-blob-2 {
+  animation: blob-2 18s ease-in-out infinite;
+}
+.animate-blob-3 {
+  animation: blob-3 16s ease-in-out infinite;
+}
+.animate-blob-4 {
+  animation: blob-4 20s ease-in-out infinite;
+}
+
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 24px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+[data-reveal="hidden"] {
+  opacity: 0;
+}
+
+[data-reveal="visible"] {
+  animation: reveal 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/*
+ * Terminal state, once the entrance animation finishes (components/event/
+ * Reveal.tsx listens for `animationend` and flips to this). Plain opacity,
+ * no animation and no transform — unlike the "visible" state above, this
+ * doesn't hold a `transform` value, so it stops being a containing block
+ * for any `position: fixed` descendant and stops being pinned as its own
+ * permanent GPU layer. A page is typically a dozen-plus `Reveal`s deep, so
+ * settling every one of them out of the animated state once it's done
+ * removes that many permanent layers instead of leaving them composited
+ * for the rest of the session.
+ */
+[data-reveal="settled"] {
+  opacity: 1;
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: rotate(-5deg); }
+  50% { transform: rotate(5deg); }
+}
+
+@keyframes sparkle-float {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  50% { transform: translateY(-8px) rotate(15deg) scale(1.08); }
+}
+
+@keyframes squiggle-float {
+  0%, 100% { transform: translate(0, 0) rotate(0deg); }
+  50% { transform: translate(4px, -4px) rotate(2deg); }
+}
+
+@keyframes icon-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+.animate-wiggle {
+  animation: wiggle 3s ease-in-out infinite;
+}
+
+.animate-sparkle-float {
+  animation: sparkle-float 5s ease-in-out infinite;
+}
+
+.animate-squiggle-float {
+  animation: squiggle-float 7s ease-in-out infinite;
+}
+
+.animate-icon-float {
+  animation: icon-float 2.5s ease-in-out infinite;
+}
+
+
+/* ==========================================================================
+   DESIGN SYSTEM
+   Shared surfaces, motion and decorative motifs. Everything below is built
+   from the brand tokens above, so a per-event `theme_color` still applies.
+   ========================================================================== */
+
+/* -- Surfaces ------------------------------------------------------------ */
+
+/*
+ * Base card. `.glass-panel` (above) stays the translucent/blurred treatment
+ * for panels that sit over imagery or blobs; `.card` is the cheaper opaque
+ * equivalent for the many places that don't need a backdrop-filter at all.
+ * Preferring this where blur buys nothing keeps scroll cost down.
+ */
+.card {
+  background: #ffffff;
+  border: 1px solid var(--hairline);
+  box-shadow: var(--elev-1);
+  transition:
+    transform var(--dur-med) var(--ease-out),
+    box-shadow var(--dur-med) var(--ease-out),
+    border-color var(--dur-med) var(--ease-out);
+}
+
+.card-interactive:hover {
+  transform: translate3d(0, -4px, 0);
+  box-shadow: var(--elev-3);
+  border-color: var(--hairline-strong);
+}
+
+/* Keyboard parity: the same lift a mouse user gets on hover. */
+.card-interactive:focus-within {
+  transform: translate3d(0, -4px, 0);
+  box-shadow: var(--elev-3);
+  border-color: var(--hairline-strong);
+}
+
+/* -- Section rhythm ------------------------------------------------------ */
+
+/*
+ * Alternating section grounds, so the page reads as a sequence of bands
+ * rather than one continuous white field. Kept very low-contrast: this is
+ * rhythm, not decoration.
+ */
+.section-tint {
+  background: var(--tint-cool);
+}
+
+.section-warm {
+  background: var(--tint-warm);
+}
+
+/*
+ * Soft radial highlight, for a section that should feel lit from behind its
+ * heading without gaining a hard background colour.
+ */
+.section-glow {
+  background:
+    radial-gradient(
+      60% 50% at 50% 0%,
+      color-mix(in srgb, var(--accent) 7%, transparent) 0%,
+      transparent 70%
+    );
+}
+
+/*
+ * Blueprint grid. The robotics/engineering motif for this platform, applied
+ * as a shared token rather than per-event styling (AGENTS.md forbids
+ * branching the UI on which event resolved). Sized in `rem` so it scales
+ * with the type, and masked so it fades out instead of ending on a hard
+ * edge.
+ */
+.tech-grid {
+  background-image:
+    linear-gradient(to right, var(--hairline) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hairline) 1px, transparent 1px);
+  background-size: 3.5rem 3.5rem;
+  -webkit-mask-image: radial-gradient(70% 60% at 50% 40%, #000 0%, transparent 100%);
+  mask-image: radial-gradient(70% 60% at 50% 40%, #000 0%, transparent 100%);
+}
+
+/* Denser variant, for small decorative panels. */
+.tech-grid-fine {
+  background-image:
+    linear-gradient(to right, var(--hairline) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--hairline) 1px, transparent 1px);
+  background-size: 1.25rem 1.25rem;
+}
+
+/*
+ * Corner registration marks, like the crop marks on a technical drawing.
+ * Two thin rules meeting at a corner; pure CSS, no extra DOM.
+ */
+.corner-marks::before,
+.corner-marks::after {
+  content: "";
+  position: absolute;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-color: var(--hairline-strong);
+  pointer-events: none;
+}
+
+.corner-marks::before {
+  top: 0.75rem;
+  left: 0.75rem;
+  border-top: 1.5px solid;
+  border-left: 1.5px solid;
+}
+
+.corner-marks::after {
+  right: 0.75rem;
+  bottom: 0.75rem;
+  border-right: 1.5px solid;
+  border-bottom: 1.5px solid;
+}
+
+/* -- Micro-interactions -------------------------------------------------- */
+
+/*
+ * Highlight sweep for primary CTAs. A single translated gradient rather
+ * than an animated background-position, so it composites on the GPU.
+ */
+.sweep {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+.sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.28) 50%,
+    transparent 80%
+  );
+  transform: translate3d(-120%, 0, 0);
+  transition: transform var(--dur-slow) var(--ease-out);
+}
+
+.sweep:hover::after,
+.sweep:focus-visible::after {
+  transform: translate3d(120%, 0, 0);
+}
+
+/*
+ * Trailing arrow that slides on hover. Applied to the arrow glyph inside a
+ * `.group` link, so text links get the same affordance as buttons.
+ */
+.arrow-slide {
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.group:hover .arrow-slide,
+.group:focus-visible .arrow-slide {
+  transform: translate3d(3px, 0, 0);
+}
+
+/*
+ * Animated underline for nav links. Scales a pseudo-element from the left
+ * instead of animating `width`, which would relayout on every frame.
+ */
+.underline-grow {
+  position: relative;
+}
+
+.underline-grow::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -0.4rem;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--dur-med) var(--ease-out);
+}
+
+.underline-grow:hover::after,
+.underline-grow:focus-visible::after,
+.underline-grow[data-active="true"]::after {
+  transform: scaleX(1);
+}
+
+/*
+ * Shared focus ring. Uses `:focus-visible` so it appears for keyboard users
+ * without ringing every mouse click, and sits on an outline (which doesn't
+ * affect layout) rather than a border.
+ */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--secondary);
+  outline-offset: 2px;
+  border-radius: inherit;
+}
+
+/* Press feedback: a small, fast settle on pointer-down. */
+.press:active {
+  transform: scale(0.97);
+  transition-duration: var(--dur-fast);
+}
+
+/* -- Reveal / scroll animation ------------------------------------------- */
+
+/*
+ * Extends the existing `[data-reveal]` system (above) with directional
+ * variants and a per-element stagger delay. The IntersectionObserver in
+ * components/event/Reveal.tsx still does nothing but flip the attribute;
+ * all the motion lives here, so it can be disabled wholesale below.
+ */
+@keyframes reveal-left {
+  from {
+    opacity: 0;
+    transform: translate3d(-28px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes reveal-right {
+  from {
+    opacity: 0;
+    transform: translate3d(28px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes reveal-scale {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes reveal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+[data-reveal="visible"][data-reveal-variant="left"] {
+  animation: reveal-left var(--dur-slow) var(--ease-out) forwards;
+}
+
+[data-reveal="visible"][data-reveal-variant="right"] {
+  animation: reveal-right var(--dur-slow) var(--ease-out) forwards;
+}
+
+[data-reveal="visible"][data-reveal-variant="scale"] {
+  animation: reveal-scale var(--dur-slow) var(--ease-out) forwards;
+}
+
+[data-reveal="visible"][data-reveal-variant="fade"] {
+  animation: reveal-fade var(--dur-slow) var(--ease-out) forwards;
+}
+
+/* Every reveal honours an optional stagger offset set inline by the parent. */
+[data-reveal="visible"] {
+  animation-delay: var(--reveal-delay, 0ms);
+}
+
+/*
+ * Staggered children. The parent sets `data-stagger`, each child gets its
+ * index-derived delay from `--i`. Used for card grids, so a row of cards
+ * arrives as a sequence rather than a block.
+ */
+[data-stagger] > * {
+  --stagger-step: 70ms;
+}
+
+[data-stagger="visible"] > * {
+  animation: reveal var(--dur-slow) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * var(--stagger-step));
+}
+
+[data-stagger="hidden"] > * {
+  opacity: 0;
+}
+
+/*
+ * Above-the-fold entrance. No observer and no client island: the hero is
+ * visible on load, so its children animate immediately, each offset by an
+ * `--i` index set in the markup. This is the site's first impression, so it
+ * runs a touch slower and wider-spaced than an in-page reveal.
+ */
+.hero-stagger > * {
+  animation: reveal var(--dur-slow) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 90ms);
+}
+
+/* -- Loading & feedback -------------------------------------------------- */
+
+/*
+ * Skeleton shimmer. Animates `transform` on an inner pseudo-element rather
+ * than `background-position` on the block itself, so a screen full of
+ * skeletons stays compositor-only.
+ */
+@keyframes skeleton-sweep {
+  from {
+    transform: translate3d(-100%, 0, 0);
+  }
+  to {
+    transform: translate3d(100%, 0, 0);
+  }
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--primary) 7%, #ffffff);
+  border-radius: 0.75rem;
+}
+
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.65),
+    transparent
+  );
+  animation: skeleton-sweep 1.6s var(--ease-in-out) infinite;
+}
+
+/* Entry for list items that are added on demand. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -8px, 0) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.animate-pop-in {
+  animation: pop-in var(--dur-med) var(--ease-spring);
+}
+
+/* Validation errors: one short shake, never a loop. */
+@keyframes shake-x {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(-4px, 0, 0); }
+  75% { transform: translate3d(4px, 0, 0); }
+}
+
+.animate-shake {
+  animation: shake-x var(--dur-med) var(--ease-in-out);
+}
+
+/* Indeterminate spinner for in-flight submit buttons. */
+@keyframes spin-360 {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-360 0.7s linear infinite;
+}
+
+/*
+ * Scanning line, for a panel that should read as instrumented/live.
+ * Deliberately slow and very low contrast.
+ */
+@keyframes scan-y {
+  0% { transform: translate3d(0, -100%, 0); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translate3d(0, 100%, 0); opacity: 0; }
+}
+
+.animate-scan {
+  animation: scan-y 6s var(--ease-in-out) infinite;
+}
+
+/* -- Route transition ---------------------------------------------------- */
+
+/*
+ * Entry animation for a newly-rendered route. Fast and opacity-led, so a
+ * navigation never feels like it is waiting on choreography.
+ */
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.route-transition {
+  animation: route-in var(--dur-med) var(--ease-out);
+}
+
+/* -- Utilities ----------------------------------------------------------- */
+
+/* Horizontal scroller with no visible scrollbar (day tabs, chip rows). */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * Admin console scrollbars. The staff console (/admin) has a dark sidebar
+ * sitting inside an otherwise light app, and several scrollable lists inside
+ * light modal cards — the browser's default scrollbar (a stark, square-edged
+ * light-grey bar) reads as unstyled against either surface. These two
+ * variants replace it with a thin, rounded thumb tinted to match whichever
+ * ground it scrolls over, tucked away with the rest of the design-system
+ * utilities rather than a one-off style local to a single component.
+ */
+.admin-scroll-dark {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.22) transparent;
+}
+
+.admin-scroll-dark::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.admin-scroll-dark::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-scroll-dark::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+}
+
+.admin-scroll-dark::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+.admin-scroll-light {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--primary) 28%, transparent) transparent;
+}
+
+.admin-scroll-light::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.admin-scroll-light::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.admin-scroll-light::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--primary) 28%, transparent);
+  border-radius: 999px;
+}
+
+.admin-scroll-light::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--primary) 45%, transparent);
+}
+
+/*
+ * Skip link. Visually hidden until focused, then pinned top-left — the
+ * standard keyboard entry point past the sticky header's nav.
+ */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 100;
+}
+
+.skip-link:focus {
+  left: 0.75rem;
+  top: 0.75rem;
+}
+
+/* ==========================================================================
+   ADMIN DATE PICKER (react-day-picker)
+   Retints the library's own CSS-variable theme (see its stylesheet) to the
+   brand tokens instead of its default blue, scoped so it can't leak into any
+   future non-admin use of the same library.
+   ========================================================================== */
+.admin-datepicker .rdp-root {
+  --rdp-accent-color: var(--secondary);
+  --rdp-accent-background-color: color-mix(in srgb, var(--secondary) 12%, white);
+  --rdp-today-color: var(--secondary);
+  --rdp-day-width: 2.25rem;
+  --rdp-day-height: 2.25rem;
+  --rdp-day_button-width: 2.1rem;
+  --rdp-day_button-height: 2.1rem;
+  --rdp-day_button-border-radius: 0.6rem;
+  --rdp-day_button-border: 2px solid transparent;
+  --rdp-nav_button-width: 2rem;
+  --rdp-nav_button-height: 2rem;
+  font-family: inherit;
+}
+
+.admin-datepicker .rdp-month_caption {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.admin-datepicker .rdp-weekday {
+  color: var(--muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+}
+
+.admin-datepicker .rdp-day_button:hover:not([disabled]) {
+  background: color-mix(in srgb, var(--secondary) 10%, transparent);
+}
+
+.admin-datepicker .rdp-selected {
+  font-weight: 600;
+  font-size: inherit;
+}
+
+.admin-datepicker .rdp-selected .rdp-day_button {
+  background: var(--secondary);
+  color: #ffffff;
+  border-color: transparent;
+}
+
+.admin-datepicker .rdp-button_previous,
+.admin-datepicker .rdp-button_next {
+  border-radius: 0.5rem;
+  color: var(--primary);
+}
+
+.admin-datepicker .rdp-button_previous:hover:not([disabled]),
+.admin-datepicker .rdp-button_next:hover:not([disabled]) {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+/* ==========================================================================
+   REDUCED MOTION
+   One place that switches off every non-essential animation on the site.
+   Reveals resolve to their final (visible) state rather than staying
+   hidden, so no content is ever lost to a disabled animation.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .animate-float,
+  .animate-float-slow,
+  .animate-blob,
+  .animate-blob-slow,
+  .animate-blob-1,
+  .animate-blob-2,
+  .animate-blob-3,
+  .animate-blob-4,
+  .animate-bounce-y,
+  .animate-wiggle,
+  .animate-sparkle-float,
+  .animate-squiggle-float,
+  .animate-icon-float,
+  .animate-marquee,
+  .animate-pop-in,
+  .animate-shake,
+  .animate-scan,
+  /* Tailwind's own looping utility, used for the live-status dot on Badge.
+     Not ours, but it runs forever, so it belongs in this list too. */
+  .animate-ping,
+  .route-transition {
+    animation: none;
+  }
+
+  /* The spinner is a loading affordance, not decoration — it keeps moving,
+     just slowly enough not to trigger anyone. */
+  .animate-spin-slow {
+    animation-duration: 2s;
+  }
+
+  .skeleton::after {
+    animation: none;
+  }
+
+  [data-reveal="hidden"],
+  [data-stagger="hidden"] > * {
+    opacity: 1;
+  }
+
+  [data-reveal="visible"],
+  [data-reveal="visible"][data-reveal-variant="left"],
+  [data-reveal="visible"][data-reveal-variant="right"],
+  [data-reveal="visible"][data-reveal-variant="scale"],
+  [data-reveal="visible"][data-reveal-variant="fade"],
+  [data-stagger="visible"] > *,
+  .hero-stagger > * {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+
+  /* Hover/press transforms are feedback, but they don't need to travel. */
+  .card-interactive:hover,
+  .card-interactive:focus-within,
+  .press:active {
+    transform: none;
+  }
+
+  .sweep::after {
+    display: none;
+  }
+
+  .underline-grow::after {
+    transition: none;
+  }
+}

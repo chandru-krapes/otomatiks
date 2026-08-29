@@ -1,0 +1,731 @@
+# Ticket Management System — Technical Report
+
+## 1. Executive Summary
+
+1. **Where implemented**: Ticket management is split across two Django apps: **`apps/tickets`** (ticket *type* definitions, pricing, capacity, access, promo codes) and **`apps/registration`** (ticket *instances* are issued as part of a `Registration`/booking).
+2. **Owning app**: `apps/tickets` owns the sellable "ticket product." `apps/registration` owns the act of acquiring one.
+3. **Models involved**: `TicketType`, `TicketAccess`, `PromoCode`, `EventSubUnit` (all in `apps/tickets/models.py`); `Ticket` (also in `apps/tickets/models.py`, but represents an *issued* ticket, not a ticket type); `Registration`, `Attendee` (in `apps/registration/models.py`); `Payment` (in `apps/payments/models.py`) is the downstream consumer.
+4. **APIs involved**: `apps/tickets/urls.py`, `apps/registration/urls.py`, and `apps/payments/urls.py` (for checkout). All mounted under `/api/v1/` (see `config/urls.py`).
+5. **Ticket ↔ Event association**: `TicketType.event` is a required `ForeignKey` to `Event` (`on_delete=CASCADE`). All ticket-type endpoints are nested under `/events/<event_id>/...`.
+6. **Frontend retrieval**: **Not found / cannot be confirmed from the current implementation.** There is no frontend code in this repository (this repo is `event_management_backend` only; per `AGENTS.md`, the public website is a separate Next.js application not present here, and no admin/dashboard frontend source exists in this repo either).
+7. **Frontend updates**: Same as above — not present in this repository.
+8. **Is ticket CRUD fully implemented?** No — **Create and Update exist; single-object Read does not** for `TicketType` (see §9/§10 below — `TicketTypeDetailView` has no `GET` handler). Delete exists as a **hard delete**, not a soft delete.
+9. **Missing functionality** (see full list in §26): no `GET` single-ticket-type endpoint; ticket-type list is unpaginated with no search/sort; `GenerateEmptyTicketsView` is an explicit `501` stub; promo codes are validated but never actually applied to a booking's price; `Payment` amount calculation recomputes live from `ticket_type.price` rather than using the `Registration.total_amount` snapshot.
+10. **Architectural issues discovered**: two parallel "ticket acquisition" flows exist side by side — the legacy single-ticket `RegistrationCreateView` (`POST /events/<id>/registrations/`) and the newer multi-attendee `BookingCreateView` (`POST /events/<id>/bookings/`) — both create `Registration` + `Ticket` rows, and both are live/reachable simultaneously.
+
+---
+
+## 2. Project Architecture
+
+```text
+apps/events        → Event, Speaker, Sponsor
+apps/tickets        → TicketType, TicketAccess, PromoCode, EventSubUnit, Ticket
+apps/registration    → RegistrationForm, Registration, Attendee, Feedback
+apps/payments        → Payment, Refund, WebhookEvent
+```
+
+URL mounting (`config/urls.py`), all under `/api/v1/`:
+```text
+/api/v1/  → accounts, events, tickets, registration, payments, attendance,
+            batching, certificates, notifications, analytics, reports
+/api/v1/schema/  → drf-spectacular OpenAPI schema
+/api/v1/docs/    → Swagger UI
+```
+Comments in the code (`# See api-spec.md`, `# See db-schema.md`) reference hand-written docs — **these files do not exist anywhere in the repository** (searched, not found). Treat all such comments as pointing to documentation that is not currently checked in.
+
+---
+
+## 3. Ticket Data Model
+
+### `TicketType` — `apps/tickets/models.py` (this is the "sellable ticket product" the spec calls "Ticket")
+
+| Field | Django Type | Required | Default | DB Column | Purpose |
+|---|---|---|---|---|---|
+| id | `BigAutoField` (from `TimeStampedModel`) | auto | auto | `id` | PK |
+| event | `ForeignKey(Event, on_delete=CASCADE, related_name="ticket_types")` | yes | — | `event_id` | Owning event |
+| name | `CharField(max_length=100)` | yes | — | `name` | Ticket type name |
+| price | `DecimalField(max_digits=10, decimal_places=2)` | yes | `0` | `price` | Base price, **Decimal** (no float) |
+| is_sponsored | `BooleanField` | no | `False` | `is_sponsored` | Flags sponsored/free-for-group tickets |
+| capacity | `PositiveIntegerField` | no | `None` | `capacity` | Nullable = unlimited |
+| sold_count | `PositiveIntegerField` | no | `0` | `sold_count` | Running tally, incremented in `create_registration`/`create_booking` |
+| sales_start | `DateTimeField` | no | `None` | `sales_start` | Nullable = no lower bound |
+| sales_end | `DateTimeField` | no | `None` | `sales_end` | Nullable = no upper bound |
+| is_registration_paused | `BooleanField` | no | `False` | `is_registration_paused` | Manual pause switch (`TicketTypePauseView`/`TicketTypeResumeView`) |
+| created_at / updated_at | `DateTimeField` (from `TimeStampedModel`) | auto | auto | — | Timestamps |
+
+No `description`, no `is_active`, no `currency` field on `TicketType` — these fields from the injected spec's conceptual model **do not exist** in the current implementation.
+
+Properties (not DB columns — computed, see §6): `is_sold_out`, `is_available`.
+
+### `TicketAccess` — `apps/tickets/models.py`
+
+| Field | Django Type | Required | Default | DB Column | Purpose |
+|---|---|---|---|---|---|
+| id | `BigAutoField` | auto | auto | `id` | PK |
+| ticket_type | `ForeignKey(TicketType, on_delete=CASCADE, related_name="access_items")` | yes | — | `ticket_type_id` | Owning ticket type |
+| kind | `CharField(max_length=20, choices=Kind.choices)` — `food`/`workshop`/`others` | yes | — | `kind` | Access category |
+
+`Meta.unique_together = ("ticket_type", "kind")` → a given ticket type can have at most one row per access kind.
+
+### `Ticket` — `apps/tickets/models.py` (this is the **issued instance**, not the sellable type)
+
+| Field | Django Type | Required | Default | DB Column | Purpose |
+|---|---|---|---|---|---|
+| id | `BigAutoField` | auto | auto | `id` | PK |
+| registration | `ForeignKey("registration.Registration", on_delete=CASCADE, related_name="tickets")` | yes | — | `registration_id` | Owning booking |
+| ticket_type | `ForeignKey(TicketType, on_delete=PROTECT, related_name="tickets")` | yes | — | `ticket_type_id` | Which ticket type was purchased |
+| attendee | `ForeignKey("registration.Attendee", on_delete=SET_NULL, null=True, blank=True, related_name="ticket")` | no | `None` | `attendee_id` | Which attendee this ticket belongs to (null for legacy single-ticket registrations) |
+| qr_token | `CharField(max_length=64, unique=True, default=generate_token, db_index=True)` | auto | random `uuid4().hex` | `qr_token` | Unguessable QR identifier — never the ticket's own `id` |
+| is_empty_ticket | `BooleanField` | no | `False` | `is_empty_ticket` | On-site "blank" ticket placeholder |
+| status | `CharField(max_length=20, choices=...)` — `valid`/`used`/`cancelled`/`expired` | no | `"valid"` | `status` | Ticket lifecycle |
+| qr_purpose | `CharField(max_length=20, choices=...)` — `entry`/`food`/`merchandise` | no | `"entry"` | `qr_purpose` | What the QR grants |
+| created_at / updated_at | inherited | auto | auto | — | Timestamps |
+
+### `PromoCode` — `apps/tickets/models.py`
+
+| Field | Type | Required | Default | Purpose |
+|---|---|---|---|---|
+| event | FK → Event, CASCADE | yes | — | Owning event |
+| code | `CharField(max_length=30)` | yes | — | Promo string |
+| discount_type | `CharField`, choices `percentage`/`flat` | yes | — | Discount kind |
+| discount_value | `DecimalField(10,2)` | yes | — | Discount magnitude |
+| max_uses | `PositiveIntegerField` | no | `None` | Nullable = unlimited |
+| used_count | `PositiveIntegerField` | no | `0` | Usage counter |
+| valid_from / valid_until | `DateTimeField` | yes | — | Validity window |
+| applicable_ticket_types | `ManyToManyField(TicketType)` | no | — | Scope restriction |
+
+`Meta.unique_together = ("event", "code")`.
+
+### `EventSubUnit` — `apps/tickets/models.py` (Zone/Session/Competition — not "ticket access," a separate concept)
+
+`event` FK, `kind` choices (`zone`/`session`/`competition`), `name`, `capacity`, `scheduled_at`, `ticket_types` M2M. Included for completeness since it lives in the same app, but it is **not** the ticket-access mechanism.
+
+### `Registration` (the "Booking") — `apps/registration/models.py`
+
+| Field | Type | Required | Default | Purpose |
+|---|---|---|---|---|
+| event | FK → Event, CASCADE | yes | — | Owning event |
+| user | FK → `AUTH_USER_MODEL`, SET_NULL | no | `None` | Null for guest bookings |
+| status | choices: `pending_payment`/`confirmed`/`cancelled` | no | `pending_payment` | Booking status |
+| form_data | `JSONField` | no | `{}` | Legacy dynamic-form flow only |
+| is_onsite | `BooleanField` | no | `False` | On-site registration flag |
+| cancelled_at / cancellation_reason | `DateTimeField`/`TextField` | no | `None`/`""` | Cancellation metadata |
+| booking_reference | `CharField(max_length=40, unique=True, null=True, blank=True)` | no | `None` | Server-generated, only set by the booking flow |
+| relationship | choices: `parent`/`training_institute`/`student` | no | `""` | Purchaser relationship, booking flow only |
+| primary_name/primary_email/primary_phone | `CharField`/`EmailField`/`CharField` | no | `""` | Purchaser contact, booking flow only |
+| unit_price / total_amount | `DecimalField(10,2)`, nullable | no | `None` | Price snapshot at booking time |
+
+DB constraint: `CheckConstraint` `registration_total_amount_non_negative` (`total_amount IS NULL OR total_amount >= 0`).
+
+### `Attendee` — `apps/registration/models.py`
+
+`booking` FK → Registration (CASCADE), `name` (required), `grade`, `date_of_birth`, `email`, `phone`, `school` (all blank-optional at the model level; relationship-conditional requirement is enforced only in the serializer, not the DB).
+
+---
+
+## 4. Ticket Relationships
+
+```text
+Event (apps.events.Event)
+   │
+   ├──< TicketType (apps.tickets.TicketType)        FK event, on_delete=CASCADE, related_name="ticket_types"
+   │       │
+   │       ├──< TicketAccess (apps.tickets.TicketAccess)   FK ticket_type, CASCADE, related_name="access_items"
+   │       ├──< Ticket (apps.tickets.Ticket)                FK ticket_type, PROTECT, related_name="tickets"
+   │       ├──< PromoCode.applicable_ticket_types (M2M)
+   │       └──< EventSubUnit.ticket_types (M2M)
+   │
+   ├──< PromoCode (apps.tickets.PromoCode)            FK event, CASCADE, related_name="promo_codes"
+   ├──< EventSubUnit (apps.tickets.EventSubUnit)        FK event, CASCADE, related_name="sub_units"
+   └──< Registration (apps.registration.Registration)   FK event, CASCADE, related_name="registrations"
+           │
+           ├──< Attendee (apps.registration.Attendee)      FK booking→Registration, CASCADE, related_name="attendees"
+           ├──< Ticket (apps.tickets.Ticket)                FK registration, CASCADE, related_name="tickets"
+           │       └── Ticket.attendee → Attendee            FK, SET_NULL, related_name="ticket" (nullable)
+           ├──< Payment (apps.payments.Payment)              FK registration, PROTECT, related_name="payments"
+           └── Registration.user → User (accounts)           FK, SET_NULL, related_name="registrations"
+```
+
+- **Tickets ↔ Events**: via `TicketType.event` (direct FK).
+- **Tickets ↔ Organizations**: not found — no org-level model in this codebase; access is scoped by `EventMembership` (per-user, per-event).
+- **Tickets ↔ Users**: not direct — `Ticket` has no `user` FK. A ticket is reached via `Ticket.registration.user`.
+- **Tickets ↔ Bookings/Orders/Registrations**: `Ticket.registration` FK, as above. There is no separate "Order" model — `Registration` is the order/booking.
+- **Tickets ↔ Attendees**: `Ticket.attendee` FK (nullable — only populated by the newer booking flow).
+- **Tickets ↔ Payments**: indirect only, through `Payment.registration` → `Registration.tickets`. `Payment` has no direct FK to `Ticket` or `TicketType`.
+- **Tickets ↔ Categories**: not found.
+- **Tickets ↔ Ticket Access**: `TicketAccess.ticket_type` FK, as above.
+
+---
+
+## 5. Ticket Business Logic
+
+| Rule | File | Function/Property | Behavior | Used by |
+|---|---|---|---|---|
+| Sold-out check | `apps/tickets/models.py` | `TicketType.is_sold_out` (property) | `capacity is not None and sold_count >= capacity` | `TicketTypeSerializer`, `TicketType.is_available` |
+| Availability check | `apps/tickets/models.py` | `TicketType.is_available` (property) | `False` if paused, sold out, or `now` outside `[sales_start, sales_end]`; else `True` | `TicketTypeSerializer` only — **not** re-checked at booking time (booking-time checks are separate, see next row) |
+| Capacity + window enforcement at booking time | `apps/registration/services.py` | `create_booking()` | Locks `TicketType` row with `select_for_update()`; rejects if paused, before `sales_start`, after `sales_end`, or `sold_count + quantity > capacity`; raises `RegistrationClosed`/`CapacityExceeded` | `BookingCreateView` |
+| Capacity enforcement, legacy flow | `apps/registration/services.py` | `create_registration()` | Same locking pattern, but for exactly 1 ticket, checks `sold_count >= capacity` (not quantity-aware since quantity is always 1) | `RegistrationCreateView`, `OnsiteRegistrationCreateView` |
+| Quantity derivation | `apps/registration/services.py` | `create_booking()` | `quantity = len(attendees)` — never accepted from the request body | `BookingCreateView` |
+| Price calculation (booking flow) | `apps/registration/services.py` | `create_booking()` | `unit_price = ticket_type.price`; `total_amount = unit_price * Decimal(quantity)` — `Decimal` throughout, no float, no division | `BookingCreateView` |
+| Price calculation (payment/checkout) | `apps/payments/services.py` | `_registration_amount()` | **Recomputes live**: `sum(t.ticket_type.price for t in registration.tickets)` — does **not** read `Registration.total_amount` | `create_zohopay_order()` |
+| Booking reference generation | `apps/registration/services.py` | `_generate_booking_reference()` | `f"{event.slug-derived-prefix}-{year}-{registration_id:06d}"`, server-side only | `create_booking()` |
+| Promo code validation | `apps/tickets/services.py` | `validate_promo_code()` | Checks existence, validity window, usage cap, ticket-type applicability. Returns `discount_type`/`discount_value` only — **does not compute a discount amount** (explicit `# TODO` in source: "the checkout flow applies it to the real cart total") | `PromoCodeValidateView` |
+| QR rendering | `apps/tickets/services.py` | `render_qr_png()` | Encodes `ticket.qr_token` (not the raw ID) into a PNG | `TicketQrImageView` |
+| Status transitions on cancellation | `apps/registration/services.py` | `cancel_registration()` | Sets `Registration.status = CANCELLED`, all child `Ticket.status = CANCELLED`, decrements each ticket's `TicketType.sold_count` | `RegistrationCancelView` |
+| Initial booking status | `apps/registration/services.py` | `create_registration()` / `create_booking()` | `CONFIRMED` if `price == 0`, else `PENDING_PAYMENT` | Both create flows |
+
+No `clean()`, no model-level `save()` overrides, and no Django signals exist anywhere in `apps/tickets` or `apps/registration` (confirmed by search — `apps/tickets/tasks.py` and `apps/tickets/permissions.py` are both **empty files**).
+
+---
+
+## 6. Ticket Serializers
+
+| Serializer | File | Model | Read Fields | Write Fields |
+|---|---|---|---|---|
+| `TicketAccessSerializer` | `apps/tickets/serializers.py` | `TicketAccess` | `id`, `kind` | `kind` (id read-only) |
+| `TicketTypeSerializer` | `apps/tickets/serializers.py` | `TicketType` | all model fields + `is_sold_out`, `is_available`, `access` (nested `TicketAccessSerializer`, `source="access_items"`, read-only) | `name`, `price`, `is_sponsored`, `capacity`, `sales_start`, `sales_end`, `is_registration_paused` (`id`/`event`/`sold_count`/`is_sold_out`/`is_available` are read-only) |
+| `PromoCodeSerializer` | `apps/tickets/serializers.py` | `PromoCode` | all fields | all except `id`/`event`/`used_count` |
+| `PromoCodeValidateSerializer` | `apps/tickets/serializers.py` | plain `Serializer` | — | `event_id`, `code`, `ticket_type_ids` (optional list) |
+| `EventSubUnitSerializer` | `apps/tickets/serializers.py` | `EventSubUnit` | all fields | all except `id`/`event` |
+| `TicketSerializer` | `apps/tickets/serializers.py` | `Ticket` | `id`, `registration`, `ticket_type`, `qr_token`, `is_empty_ticket`, `status`, `qr_purpose`, `created_at` | `registration`, `ticket_type`, `is_empty_ticket`, `status`, `qr_purpose` (`id`/`qr_token`/`created_at` read-only). **Note: `attendee` exists on the model but is not exposed by this serializer at all.** |
+| `AttendeeSerializer` | `apps/registration/serializers.py` | `Attendee` | `id`, `name`, `grade`, `date_of_birth`, `email`, `phone`, `school` | none — fully read-only |
+| `AttendeeInputSerializer` | `apps/registration/serializers.py` | plain `Serializer` | — | `name` (required), `grade`/`date_of_birth`/`email`/`phone`/`school` (optional at field level; relationship-conditional requirement enforced in `BookingCreateSerializer.validate()`) |
+| `PrimaryAccountSerializer` | `apps/registration/serializers.py` | plain `Serializer` | — | `name`, `email`, `phone` (all required) |
+| `BookingCreateSerializer` | `apps/registration/serializers.py` | plain `Serializer` | — | `ticket_id`, `relationship` (choice-validated), `primary_account` (nested), `attendees` (nested list, min 1) |
+| `BookingSerializer` | `apps/registration/serializers.py` | `Registration` | `booking_reference`, `status`, `ticket` (computed `{id, name}`), `quantity` (computed), `unit_price`, `total_amount`, `currency` (hard-coded `"INR"`), `relationship`, `primary_name/email/phone`, `attendees` (nested), `created_at` | none — fully read-only |
+| `RegistrationCreateSerializer` | `apps/registration/serializers.py` | plain `Serializer` | — | `ticket_type_id`, `form_data`, `promo_code` (optional; note: `promo_code` is accepted here but `create_registration()` never reads it — dead input) |
+| `RegistrationSerializer` | `apps/registration/serializers.py` | `Registration` | most fields incl. nested `tickets` (via `TicketSerializer`) | `form_data`, `is_onsite`, `cancellation_reason` |
+
+---
+
+## 7. Ticket API Endpoints
+
+All under `/api/v1/` (see `config/urls.py`). Only endpoints that exist and have an implemented handler are listed; a `GET` row is omitted where the view has no `get()` method (flagged explicitly).
+
+| Method | Endpoint | View | Purpose |
+|---|---|---|---|
+| GET, POST | `/events/<event_id>/ticket-types/` | `TicketTypeListCreateView` | List ticket types for an event / create one |
+| PATCH, DELETE | `/events/<event_id>/ticket-types/<pk>/` | `TicketTypeDetailView` | Update / delete a ticket type — **no GET** |
+| POST | `/events/<event_id>/ticket-types/<pk>/pause/` | `TicketTypePauseView` | Pause sales |
+| POST | `/events/<event_id>/ticket-types/<pk>/resume/` | `TicketTypeResumeView` | Resume sales |
+| POST | `/ticket-types/<pk>/generate-empty/` | `GenerateEmptyTicketsView` | **Stub — always returns HTTP 501** |
+| GET, POST | `/events/<event_id>/promo-codes/` | `PromoCodeListCreateView` | List / create promo codes |
+| PATCH, DELETE | `/events/<event_id>/promo-codes/<pk>/` | `PromoCodeDetailView` | Update / delete — **no GET** |
+| POST | `/promo-codes/validate/` | `PromoCodeValidateView` | Validate a code (no auth required) |
+| GET, POST | `/events/<event_id>/sub-units/` | `EventSubUnitListCreateView` | List / create zones/sessions/competitions |
+| PATCH, DELETE | `/events/<event_id>/sub-units/<pk>/` | `EventSubUnitDetailView` | Update / delete — **no GET** |
+| GET | `/tickets/<pk>/` | `TicketDetailView` | Get a single **issued ticket instance** (staff-only) |
+| GET | `/tickets/<pk>/qr-image/` | `TicketQrImageView` | PNG QR image for an issued ticket (staff-only) |
+| GET, PUT | `/events/<event_id>/registration-form/` | `RegistrationFormView` | Dynamic form schema |
+| POST | `/events/<event_id>/registrations/` | `RegistrationCreateView` | Legacy single-ticket registration |
+| POST | `/events/<event_id>/registrations/onsite/` | `OnsiteRegistrationCreateView` | Staff-created on-site registration |
+| POST | `/events/<event_id>/bookings/` | `BookingCreateView` | **Multi-attendee booking (current)** |
+| GET | `/bookings/<booking_reference>/` | `BookingDetailView` | Booking confirmation lookup |
+| GET | `/registrations/` | `RegistrationListView` | List registrations (paginated) |
+| GET | `/registrations/<pk>/` | `RegistrationDetailView` | Single registration |
+| POST | `/registrations/<pk>/cancel/` | `RegistrationCancelView` | Cancel |
+| POST | `/registrations/<pk>/feedback/` | `FeedbackCreateView` | Post-event feedback |
+
+---
+
+## 8. GET Ticket APIs
+
+### List ticket types for an event
+```http
+GET /api/v1/events/{event_id}/ticket-types/
+```
+- **Auth**: `permissions.AllowAny` on the view (`TicketTypeListCreateView.permission_classes`).
+- **Query params**: **none supported**. `apps/tickets/views.py::TicketTypeListCreateView.get()` does `TicketType.objects.filter(event_id=event_id)` with no search/sort/status filtering, and returns the serialized list directly — **not wrapped in `ListAPIViewMixin` pagination** (unlike `RegistrationListView`/`PaymentListView`, which are paginated).
+- **Response** (plain JSON array, not `{results: [...]}`):
+```json
+[
+  {
+    "id": 1,
+    "event": 4,
+    "name": "General Admission",
+    "price": "1000.00",
+    "is_sponsored": false,
+    "capacity": 100,
+    "sold_count": 12,
+    "sales_start": "2026-01-01T00:00:00Z",
+    "sales_end": "2026-03-01T00:00:00Z",
+    "is_registration_paused": false,
+    "is_sold_out": false,
+    "is_available": true,
+    "access": [
+      {"id": 1, "kind": "food"},
+      {"id": 2, "kind": "workshop"}
+    ]
+  }
+]
+```
+
+### Get single ticket type
+```text
+Not found / cannot be confirmed — TicketTypeDetailView has no `get()` handler.
+```
+`GET /events/{event_id}/ticket-types/{id}/` will return **405 Method Not Allowed**. There is currently no way to fetch a single `TicketType` by ID; a frontend must fetch the list and filter client-side, or use the (staff-only) `TicketDetailView`, which returns an **issued Ticket instance**, not the ticket type/product.
+
+### Get a single issued Ticket
+```http
+GET /api/v1/tickets/{id}/
+```
+- **Auth**: `IsEventOrganizerOrVolunteerOrAdmin` — staff only, not for a public "Ticket Details" purchase UI.
+- **Response**: `TicketSerializer` shape — `id, registration, ticket_type, qr_token, is_empty_ticket, status, qr_purpose, created_at`.
+
+---
+
+## 9. POST — Create Ticket Type API
+
+```http
+POST /api/v1/events/{event_id}/ticket-types/
+Content-Type: application/json
+Authorization: Bearer <JWT>
+```
+**Auth/permission**: not declared on the class (`permission_classes = [AllowAny]`), but `post()` manually checks `IsEventOrganizerOrAdmin().has_permission(request, self)` and calls `self.permission_denied(request)` if it fails.
+
+```json
+{
+  "name": "General Admission",
+  "price": "1000.00",
+  "is_sponsored": false,
+  "capacity": 100,
+  "sales_start": "2026-01-01T00:00:00Z",
+  "sales_end": "2026-03-01T00:00:00Z",
+  "is_registration_paused": false
+}
+```
+
+| Field | Required | Type | Purpose |
+|---|---|---|---|
+| name | yes | string | — |
+| price | no (defaults `0`) | decimal string | — |
+| is_sponsored | no | bool | — |
+| capacity | no | int or null | — |
+| sales_start / sales_end | no | ISO datetime or null | — |
+| is_registration_paused | no | bool | — |
+
+`event` is injected server-side (`serializer.save(event_id=event_id)`) — cannot be set by the client. `access` is not writable through this endpoint (`TicketAccessSerializer` is nested read-only; there is no endpoint to create `TicketAccess` rows through the API — only through Django Admin, see §14).
+
+**Response**: `201`, `TicketTypeSerializer` shape (as in §8).
+
+**Validation errors**: standard DRF `400` with `{field: [errors]}` shape (no custom error format here).
+
+### Create booking (the actual "buy ticket" flow)
+Covered fully in §25 (Frontend Integration Contract) and §11.
+
+---
+
+## 10. PUT/PATCH — Update Ticket Type API
+
+```text
+PUT: not implemented.
+PATCH: implemented.
+```
+```http
+PATCH /api/v1/events/{event_id}/ticket-types/{id}/
+Authorization: Bearer <JWT>   (IsEventOrganizerOrAdmin)
+```
+```json
+{ "price": "1200.00", "capacity": 150 }
+```
+Any subset of: `name`, `price`, `is_sponsored`, `capacity`, `sales_start`, `sales_end`, `is_registration_paused`. `id`, `event`, `sold_count`, `is_sold_out`, `is_available` are read-only and silently ignored if sent. Response: `200`, updated `TicketTypeSerializer`.
+
+Pause/resume are separate dedicated endpoints rather than a `PATCH` on `is_registration_paused` directly:
+```http
+POST /api/v1/events/{event_id}/ticket-types/{id}/pause/
+POST /api/v1/events/{event_id}/ticket-types/{id}/resume/
+```
+(Both `IsEventOrganizerOrAdmin`, no request body, return the updated `TicketTypeSerializer`.)
+
+---
+
+## 11. DELETE — Ticket API
+
+```http
+DELETE /api/v1/events/{event_id}/ticket-types/{id}/
+```
+`TicketTypeDetailView.delete()` calls `ticket_type.delete()` — **this is a real, hard database delete**, not a soft-delete/`is_active` flag. There is no `is_active`/`archived`/`deactivated` field on `TicketType` at all. `Meta.on_delete` on `Ticket.ticket_type` is `PROTECT` — so deleting a `TicketType` that has any issued `Ticket` rows against it will raise `ProtectedError` at the DB layer (not caught/translated to a friendly API error anywhere in the view).
+
+For issued `Ticket` instances: **no delete endpoint exists at all** — cancellation is done indirectly via `POST /registrations/{pk}/cancel/`, which sets `Ticket.status = "cancelled"` (a status change, not a delete).
+
+---
+
+## 12. Ticket Pricing
+
+1. Base price field: `TicketType.price`.
+2. `DecimalField(max_digits=10, decimal_places=2)` — confirmed `Decimal`, no floats anywhere in the pricing code path.
+3. Backend calculates totals: **yes**, in `create_booking()` (`apps/registration/services.py`) — `total_amount = unit_price * Decimal(quantity)`. No division anywhere.
+4. Pricing formula confirmed: **`base_price × attendee_count`** exactly, via `create_booking()`.
+5. `unit_price`/`total_amount` are stored on `Registration` as a **snapshot at booking time** — later changes to `TicketType.price` do not retroactively change an existing booking's stored amount.
+6. **Gap**: `apps/payments/services.py::_registration_amount()` (used by `create_zohopay_order`) recomputes the amount live from `sum(ticket.ticket_type.price for ticket in registration.tickets)` rather than reading `Registration.total_amount`. If `TicketType.price` changes between booking creation and payment/checkout, the payment amount will differ from the stored booking snapshot. This is an existing inconsistency in the code, not something introduced or fixed here.
+7. Discounts: `PromoCode` exists and is validated (`PromoCodeValidateView`), but `validate_promo_code()` explicitly does not compute a discount amount (source comment: "Left as a TODO for the payments module build"), and `create_booking()` does not accept or apply a promo code at all.
+8. Taxes: not found anywhere in the codebase.
+9. Additional charges: not found.
+10. Currency: `Payment.currency` (`CharField`, default `"INR"`) exists on `Payment`. `Registration`/`TicketType` have **no** currency field — `BookingSerializer.currency` is a hard-coded `"INR"` string in the serializer, not read from any model field.
+
+---
+
+## 13. Ticket Capacity
+
+- **Capacity field**: `TicketType.capacity` (nullable = unlimited), **ticket-type level**, not event-level or booking-level.
+- **Available capacity**: not a stored field — derived as `capacity - sold_count` implicitly via the `is_sold_out` property and the capacity check in `create_booking`/`create_registration`.
+- `sold_count` is incremented directly at booking creation (by `quantity`) — it does **not** distinguish reserved/pending/confirmed/cancelled at the counting level; it is decremented back on cancellation (`cancel_registration`, per ticket, `-1` each). There is no separate reservation/hold state — a `pending_payment` registration already counts fully against capacity the moment it's created.
+- **Overbooking prevention**: `TicketType.objects.select_for_update()` locks the row inside `transaction.atomic()` in both `create_registration` and `create_booking`, so two concurrent requests against the same ticket type serialize on that row — confirmed race-safe for concurrent bookings against the same `TicketType`.
+
+---
+
+## 14. Ticket Availability
+
+- **Sales window**: `TicketType.sales_start` / `sales_end` (both nullable).
+- **Active/paused**: `TicketType.is_registration_paused` (boolean).
+- **Published status**: not applicable at ticket-type level (only `Event.status` has draft/published/cancelled — ticket types have no independent publish state).
+- **Computed availability**: `TicketType.is_available` property — `False` if paused, sold out, or `now` outside the sales window; else `True`. Exposed in `TicketTypeSerializer` as `is_available` (boolean).
+- **What the frontend should use for the "Buy" button**: the `is_available` field from the ticket-type list response. Note this field is only computed at serialization time (request time) — there's no cached/precomputed availability, so it reflects the live check.
+
+---
+
+## 15. Ticket Access
+
+**CURRENT IMPLEMENTATION**: `TicketAccess` is a **separate normalized model** (not booleans, not a JSONField, not hard-coded strings) — `apps/tickets/models.py`. `kind` is a `TextChoices` field (`food`/`workshop`/`others`), FK'd to `TicketType`, `unique_together=("ticket_type","kind")`.
+
+```text
+TicketType
+   └──< TicketAccess (FK ticket_type, CASCADE)
+           kind: food | workshop | others
+```
+
+Exposed read-only, nested, in `TicketTypeSerializer.access` (`source="access_items"`, via `TicketAccessSerializer`). Response shape: `"access": [{"id": 1, "kind": "food"}, ...]`.
+
+**GAP**: There is **no API endpoint to create, update, or delete `TicketAccess` rows**. It only appears as read-only nested output on the ticket-type list/create response. The only way to manage which access kinds a ticket type grants is through Django Admin (`TicketAccessInline` on `TicketTypeAdmin`) — not through any REST endpoint.
+
+---
+
+## 16. Event → Ticket Flow
+
+```text
+Frontend has event_id (or slug, resolved separately via /events/?slug=...)
+        ↓
+GET /api/v1/events/{event_id}/ticket-types/
+        ↓
+Plain JSON array of TicketTypeSerializer objects (unpaginated)
+        ↓
+Frontend renders ticket options: name, price, capacity, sold_count,
+is_sold_out, is_available, access[]
+```
+**Frontend file/component responsible**: **Not found / cannot be confirmed** — no frontend code exists in this repository.
+
+---
+
+## 17. Frontend Ticket Integration
+
+**Not found / cannot be confirmed from the current implementation.** This repository (`event_management_backend`) contains no frontend source (no `package.json`, no `src/` frontend tree, no React/Next.js/Angular files were found in a repository-wide search). Per `AGENTS.md`, the public event website is a **separate** Next.js repository not included here, and there is no admin/dashboard frontend checked into this repo either. Any statement about specific frontend files, components, or API-consuming services would be an assumption — explicitly not provided per the accuracy rules.
+
+---
+
+## 18. UI → API Mapping
+
+**Not found / cannot be confirmed** — no UI exists in this repository to map against. See §17.
+
+---
+
+## 19. Admin Ticket Management
+
+**Not found / cannot be confirmed** for any dashboard/admin *frontend*. What does exist is **Django Admin** (`/admin/`), which is a backend-rendered admin UI, not a custom frontend:
+
+- `apps/tickets/admin.py`:
+  - `TicketTypeAdmin` — list view (`name, event, price, capacity, sold_count, is_registration_paused`), filters (`is_sponsored, is_registration_paused`), with `TicketAccessInline` (inline add/edit of access kinds).
+  - `PromoCodeAdmin`, `EventSubUnitAdmin`, `TicketAdmin` (list incl. `attendee` column) — all registered.
+- `apps/registration/admin.py`:
+  - `RegistrationAdmin` — list incl. `booking_reference, event, user, relationship, status, total_amount, is_onsite, created_at`; filterable by `status, is_onsite, relationship`; searchable by `user__email, user__full_name, booking_reference, primary_email`; `AttendeeInline` for viewing/editing attendees inline.
+
+```text
+Django Admin (ticket type list/edit page)
+      ↓ (server-rendered forms, not a JS API client)
+Django Admin views (django.contrib.admin)
+      ↓
+TicketType / TicketAccess / Registration / Attendee models directly
+      ↓
+PostgreSQL
+```
+This does **not** go through the REST API/serializers documented above — Django Admin talks to the ORM directly.
+
+---
+
+## 20. Authentication & Permissions
+
+Global default (`config/settings.py::REST_FRAMEWORK`):
+```python
+DEFAULT_AUTHENTICATION_CLASSES = ("rest_framework_simplejwt.authentication.JWTAuthentication",)
+DEFAULT_PERMISSION_CLASSES = ("rest_framework.permissions.IsAuthenticated",)
+```
+So **any view that doesn't explicitly override `permission_classes` requires a valid JWT.**
+
+| Endpoint | Permission (as declared in code) |
+|---|---|
+| `GET /events/{id}/ticket-types/` | `AllowAny` (class-level) |
+| `POST /events/{id}/ticket-types/` | Manual check: `IsEventOrganizerOrAdmin` |
+| `PATCH/DELETE /events/{id}/ticket-types/{id}/` | `IsEventOrganizerOrAdmin` |
+| `POST .../pause/`, `.../resume/` | `IsEventOrganizerOrAdmin` |
+| `POST /ticket-types/{id}/generate-empty/` | `IsEventOrganizerOrAdmin` (but body is a 501 stub) |
+| `GET/POST /events/{id}/promo-codes/` | `IsEventOrganizerOrAdmin` |
+| `POST /promo-codes/validate/` | default global `IsAuthenticated` (no override in view) |
+| `GET/POST /events/{id}/sub-units/` | `AllowAny` for GET; manual `IsEventOrganizerOrAdmin` check for POST |
+| `GET /tickets/{id}/`, `.../qr-image/` | `IsEventOrganizerOrVolunteerOrAdmin` |
+| `POST /events/{id}/registrations/` | `AllowAny` (guest + authenticated) |
+| `POST /events/{id}/registrations/onsite/` | `IsEventOrganizerOrVolunteerOrAdmin` |
+| `POST /events/{id}/bookings/` | `AllowAny` (guest checkout, explicit override) |
+| `GET /bookings/{reference}/` | default global `IsAuthenticated`, **plus** in-view ownership check (requester's email must match `primary_email`, or requester must be admin/have an `EventMembership` on the event) |
+| `GET /registrations/` | default `IsAuthenticated`; results filtered to `user`'s own unless admin/organizer/volunteer |
+| `GET/POST /registrations/{pk}/...` | `IsOwnerOrEventStaff` |
+
+`IsEventOrganizerOrAdmin`, `IsEventOrganizerOrVolunteerOrAdmin`, `IsOwnerOrEventStaff`, `ReadOnlyOrEventStaff` are all defined in `apps/accounts/permissions.py`. `apps/tickets/permissions.py` is an **empty file** — no ticket-specific permission classes exist; the tickets app reuses the accounts-app permission classes.
+
+---
+
+## 21. Error Responses
+
+No custom exception handler is configured (`DEFAULT_EXCEPTION_HANDLER` not set in `REST_FRAMEWORK` settings) — standard DRF defaults apply:
+
+- `400` — DRF's default `{field: ["error message"]}` shape for serializer validation errors. The booking flow additionally raises structured `{"detail": "...", "code": "registration_unavailable"}` for `CapacityExceeded`/`RegistrationClosed` (via `raise ValidationError({...})` in `BookingCreateView`), and `{"attendees": [{"field": ["This field is required."]}]}` for relationship-conditional attendee validation.
+- `401` — DRF default `NotAuthenticated` when no credentials are supplied on an `IsAuthenticated`-protected view.
+- `403` — DRF default `PermissionDenied`; also explicitly raised in `BookingDetailView` (`raise PermissionDenied()`) when an authenticated user isn't the booking's owner/staff.
+- `404` — `get_object_or_404` used throughout for detail views; `BookingCreateView` also explicitly raises `NotFound({"detail": "Ticket not found.", "code": "ticket_not_found"})` for an unknown `ticket_id`.
+- `409` — **not found / cannot be confirmed** — no view returns `409` anywhere in `apps/tickets` or `apps/registration`. Capacity conflicts currently return `400`, not `409`.
+- `500` — unhandled exceptions (e.g. `Event.DoesNotExist` when an invalid `event_id` is passed to most of these views) propagate as unhandled `Http404`-unrelated exceptions and fall through to Django's default error handling; no custom stack-trace suppression beyond `DEBUG` setting.
+
+---
+
+## 22. Database Structure
+
+Django default table naming (`<app_label>_<modelname lowercased>`), confirmed against the generated migrations:
+
+| Model | Table | PK | Notable constraints/indexes |
+|---|---|---|---|
+| `TicketType` | `tickets_tickettype` | `id` | FK `event_id` |
+| `TicketAccess` | `tickets_ticketaccess` | `id` | FK `ticket_type_id`; `UNIQUE(ticket_type_id, kind)` |
+| `Ticket` | `tickets_ticket` | `id` | FK `registration_id`, `ticket_type_id` (PROTECT), `attendee_id` (nullable); `UNIQUE(qr_token)` + index |
+| `PromoCode` | `tickets_promocode` | `id` | FK `event_id`; `UNIQUE(event_id, code)`; M2M through table `tickets_promocode_applicable_ticket_types` |
+| `EventSubUnit` | `tickets_eventsubunit` | `id` | FK `event_id`; M2M through table `tickets_eventsubunit_ticket_types` |
+| `Registration` | `registration_registration` | `id` | FK `event_id`, `user_id`; `UNIQUE(booking_reference)`; `CHECK(total_amount IS NULL OR total_amount >= 0)` |
+| `Attendee` | `registration_attendee` | `id` | FK `booking_id` (→ `registration_registration.id`) |
+| `Payment` | `payments_payment` | `id` | FK `registration_id` (PROTECT); index on `gateway_payment_id`, `gateway_order_id` |
+
+All tables inherit `created_at`/`updated_at` from the abstract `TimeStampedModel`, and default ordering `["-created_at"]` where `Meta` is not overridden without re-inheriting it (see `Registration.Meta(TimeStampedModel.Meta)` and `TicketAccess.Meta(TimeStampedModel.Meta)`, which explicitly preserve it).
+
+---
+
+## 23. Existing Tests
+
+- `apps/tickets/tests/__init__.py` — **empty**, no test files exist in `apps/tickets`.
+- `apps/registration/tests/test_booking_api.py` — 21 tests, covering: pricing scaling (1–4 attendees), relationship-conditional validation (parent/training-institute/student, valid + missing-field), capacity (available/exactly-full/exceeded), paused ticket types, invalid ticket → 404, zero attendees, client-supplied price/quantity/status/reference all ignored, atomicity (no partial booking on validation failure), and booking-detail ownership permissions (owner/stranger/unauthenticated).
+- `apps/events/tests/test_public_api.py` — event slug/publish-status tests; **currently failing** (`AttributeError: type object 'Event' has no attribute 'Status'` — the test references `Event.Status.PUBLISHED` but `Event` defines `STATUS_CHOICES` as a plain tuple, not a `TextChoices` class). This is a pre-existing bug in the test file, unrelated to tickets.
+- **No tests exist** for: `TicketType` CRUD, `TicketAccess`, `PromoCode` validation/application, capacity via the legacy `create_registration` path, QR generation, or `Ticket` status transitions on cancellation.
+
+---
+
+## 24. Complete System Flow
+
+```text
+[Admin/organizer, via Django Admin or POST /events/{id}/ticket-types/]
+        ↓
+TicketTypeSerializer.save()  (event_id injected server-side)
+        ↓
+TicketType row in PostgreSQL (tickets_tickettype)
+        ↓ (optionally, via Django Admin TicketAccessInline only — no REST endpoint)
+TicketAccess rows in PostgreSQL
+
+[Buyer-facing flow]
+GET /events/{event_id}/ticket-types/
+        ↓
+TicketTypeSerializer (list, unpaginated) → id, name, price, capacity, sold_count,
+    is_sold_out, is_available, access[]
+        ↓ (frontend — not in this repo)
+User picks relationship + fills primary account + N attendees
+        ↓
+POST /events/{event_id}/bookings/   { ticket_id, relationship, primary_account, attendees[] }
+        ↓
+BookingCreateSerializer validates (relationship-conditional attendee fields)
+        ↓
+services.create_booking()  [transaction.atomic + select_for_update on TicketType]
+    - quantity = len(attendees)
+    - unit_price = ticket_type.price ; total_amount = unit_price * quantity
+    - capacity/pause/sales-window checks
+    - Registration + Attendee(s) + Ticket(s) created; TicketType.sold_count += quantity
+    - booking_reference generated
+        ↓
+BookingSerializer response (201): booking_reference, status, ticket{id,name},
+    quantity, unit_price, total_amount, currency, attendees[]
+        ↓
+[Checkout — separate step, not part of booking creation]
+POST /payments/zohopay/create-order/  { registration_id }
+        ↓
+services.create_zohopay_order() → _registration_amount() [recomputes live from
+    ticket_type.price, NOT from Registration.total_amount] → Payment row (status=pending)
+        ↓
+Zoho Pay webhook → POST /payments/zohopay/webhook/ → services.handle_webhook()
+    [idempotent via WebhookEvent; actual payload parsing/status update is a TODO stub]
+```
+
+---
+
+## 25. Frontend Integration Contract
+
+### To display tickets for an event
+```text
+API endpoint:    GET /api/v1/events/{event_id}/ticket-types/
+HTTP method:     GET
+Authentication:  None required (AllowAny)
+Request:         path param event_id only — no query params supported
+Response:        plain JSON array of TicketTypeSerializer objects (see §8 for full shape)
+```
+
+### To display ticket details
+```text
+API endpoint:    Not implemented for TicketType (no GET detail endpoint exists).
+Workaround:      Fetch the list endpoint above and select the matching id client-side.
+```
+
+### To create a booking (the actual "buy ticket" action)
+```text
+API endpoint:    POST /api/v1/events/{event_id}/bookings/
+HTTP method:     POST
+Authentication:  None required (AllowAny — guest checkout)
+Request body:    { "ticket_id": <TicketType id>, "relationship": "parent"|"training_institute"|"student",
+                    "primary_account": {"name","email","phone"},
+                    "attendees": [{"name", ...relationship-conditional fields}] }
+Response:        201, BookingSerializer shape (see §7/§9 of prior session's implementation report;
+                    booking_reference, status, ticket, quantity, unit_price, total_amount,
+                    currency, attendees[])
+Server-derived (client cannot set): quantity, unit_price, total_amount, status, booking_reference
+```
+
+### To update a ticket type (organizer/admin only)
+```text
+API endpoint:    PATCH /api/v1/events/{event_id}/ticket-types/{id}/
+Authentication:  JWT, IsEventOrganizerOrAdmin
+Request body:    any subset of name, price, is_sponsored, capacity, sales_start, sales_end,
+                    is_registration_paused
+Response:        200, TicketTypeSerializer
+```
+
+### To determine availability
+```text
+API endpoint:    GET /api/v1/events/{event_id}/ticket-types/
+Field:           is_available (boolean, computed server-side per request)
+Logic:           not paused AND not sold out AND now within [sales_start, sales_end]
+```
+
+### To display pricing
+```text
+API endpoint:    GET /api/v1/events/{event_id}/ticket-types/  → field "price" (per-unit)
+Calculation:     total is NOT computed on this endpoint — it is only computed at booking
+                    creation time (POST .../bookings/), returned as "total_amount" in the
+                    response. A frontend wanting a live preview before submitting must
+                    replicate `price × attendee_count` client-side for UX only — the
+                    server always recalculates and is authoritative.
+```
+
+---
+
+## 26. Current Limitations / Gaps
+
+| Gap | Where | Why the UI needs it | Backend change required? |
+|---|---|---|---|
+| No `GET` single-`TicketType` endpoint | `TicketTypeDetailView` (`apps/tickets/views.py`) has no `get()` | A "Ticket Details" page can't fetch one ticket type directly by ID | Yes |
+| Ticket-type list is unpaginated, no filter/search/sort | `TicketTypeListCreateView.get()` | Fine for small ticket counts per event, but inconsistent with every other list endpoint in the project (`RegistrationListView`, `PaymentListView` are paginated) | Yes, if consistency/scale is desired |
+| No REST endpoint to manage `TicketAccess` | `apps/tickets/urls.py` | A ticket-type edit form can't add/remove Food/Workshop/Others tags without Django Admin | Yes |
+| `GenerateEmptyTicketsView` is a stub | `apps/tickets/views.py` | On-site "blank ticket" printing/generation flow described elsewhere in the codebase's own TODO comments is unusable | Yes |
+| Promo code discount never applied to price | `apps/tickets/services.py::validate_promo_code`, `apps/registration/services.py::create_booking` | A promo-code field on the buying page has nothing to attach to on the price calc | Yes |
+| Payment amount doesn't use the booking's price snapshot | `apps/payments/services.py::_registration_amount` | If a ticket price changes between booking and payment, the amount charged can silently diverge from what the buyer was shown at booking time | Yes |
+| `RegistrationCreateSerializer.promo_code` is accepted but unused | `apps/registration/serializers.py` / `services.py::create_registration` | A frontend sending a promo code on the legacy registration flow gets no error but no effect either — silently ignored | Yes (or remove the field) |
+| Two parallel ticket-acquisition flows both live | `RegistrationCreateView` vs `BookingCreateView` | A frontend developer must know which one to call — nothing in the API marks one as deprecated | Documentation, not necessarily code |
+| No `409` conflict responses for capacity | All booking/registration create views return `400` for capacity conflicts | If a frontend distinguishes "your input was invalid" (400) from "someone else took the last spot" (409), it can't today | Yes, if desired |
+
+---
+
+## 27. Recommendations
+
+*(This section only — everything above is fact, traced to source.)*
+
+- Add a `GET` handler to `TicketTypeDetailView` for parity with every other detail view in the project.
+- Either paginate `TicketTypeListCreateView.get()` for consistency, or explicitly document that ticket-type lists are intentionally unpaginated (event ticket-type counts are expected to stay small).
+- Add `POST`/`DELETE` (or a nested `PATCH` accepting a list) for `TicketAccess` so it's manageable outside Django Admin.
+- Wire `_registration_amount()` in `apps/payments/services.py` to read `Registration.total_amount`/`unit_price` when present (falling back to the live sum only for the legacy flow where those fields are `None`), so checkout amount always matches what the buyer was shown.
+- Decide and document whether `RegistrationCreateView`/`OnsiteRegistrationCreateView` (legacy, single-ticket) remain supported alongside `BookingCreateView`, or should be considered deprecated for buyer-facing use.
+
+---
+
+## 28. Files Involved
+
+**Models**
+- `apps/tickets/models.py` — `TicketType`, `TicketAccess`, `PromoCode`, `EventSubUnit`, `Ticket`
+- `apps/registration/models.py` — `RegistrationForm`, `Registration`, `Attendee`, `Feedback`
+- `apps/events/models.py` — `Event` (referenced by `TicketType.event`)
+- `apps/payments/models.py` — `Payment`, `Refund`, `WebhookEvent` (downstream consumer)
+
+**Serializers**
+- `apps/tickets/serializers.py` — `TicketAccessSerializer`, `TicketTypeSerializer`, `PromoCodeSerializer`, `PromoCodeValidateSerializer`, `EventSubUnitSerializer`, `TicketSerializer`
+- `apps/registration/serializers.py` — `AttendeeSerializer`, `AttendeeInputSerializer`, `PrimaryAccountSerializer`, `BookingCreateSerializer`, `BookingSerializer`, `RegistrationFormSerializer`, `RegistrationSerializer`, `RegistrationCreateSerializer`, `RegistrationCancelSerializer`, `FeedbackSerializer`
+
+**Views**
+- `apps/tickets/views.py` — all `TicketType*`, `PromoCode*`, `EventSubUnit*`, `Ticket*` views
+- `apps/registration/views.py` — `BookingCreateView`, `BookingDetailView`, `RegistrationFormView`, `RegistrationCreateView`, `OnsiteRegistrationCreateView`, `RegistrationListView`, `RegistrationDetailView`, `RegistrationCancelView`, `FeedbackCreateView`
+
+**URLs**
+- `apps/tickets/urls.py`, `apps/registration/urls.py`, `config/urls.py`
+
+**Services**
+- `apps/tickets/services.py` — `render_qr_png()`, `validate_promo_code()`
+- `apps/registration/services.py` — `create_registration()`, `cancel_registration()`, `create_booking()`, `_generate_booking_reference()`
+- `apps/payments/services.py` — `_registration_amount()`, `create_zohopay_order()` (booking's downstream consumer)
+
+**Permissions**
+- `apps/tickets/permissions.py` — **empty**
+- `apps/accounts/permissions.py` — `IsEventOrganizerOrAdmin`, `IsEventOrganizerOrVolunteerOrAdmin`, `IsOwnerOrEventStaff`, `ReadOnlyOrEventStaff` (used throughout tickets/registration)
+
+**Admin**
+- `apps/tickets/admin.py`, `apps/registration/admin.py`
+
+**Tests**
+- `apps/registration/tests/test_booking_api.py` (21 tests)
+- `apps/tickets/tests/__init__.py` (empty — no tests)
+
+**Frontend**
+- **None present in this repository.**
+
+**Configuration**
+- `config/settings.py` (`REST_FRAMEWORK` block — auth/permission/pagination defaults), `config/urls.py`
+
+---
+
+## 29. Final API Reference Table
+
+| Method | Endpoint | Purpose | Auth | Request | Response |
+|---|---|---|---|---|---|
+| GET | `/api/v1/events/{event_id}/ticket-types/` | List ticket types | AllowAny | — | JSON array, `TicketTypeSerializer` |
+| POST | `/api/v1/events/{event_id}/ticket-types/` | Create ticket type | IsEventOrganizerOrAdmin | `TicketTypeSerializer` writable fields | 201, `TicketTypeSerializer` |
+| PATCH | `/api/v1/events/{event_id}/ticket-types/{id}/` | Update ticket type | IsEventOrganizerOrAdmin | partial fields | 200, `TicketTypeSerializer` |
+| DELETE | `/api/v1/events/{event_id}/ticket-types/{id}/` | Hard-delete ticket type | IsEventOrganizerOrAdmin | — | 204 (or DB `ProtectedError` if tickets exist) |
+| POST | `/api/v1/events/{event_id}/ticket-types/{id}/pause/` | Pause sales | IsEventOrganizerOrAdmin | — | 200, `TicketTypeSerializer` |
+| POST | `/api/v1/events/{event_id}/ticket-types/{id}/resume/` | Resume sales | IsEventOrganizerOrAdmin | — | 200, `TicketTypeSerializer` |
+| POST | `/api/v1/ticket-types/{id}/generate-empty/` | Generate blank tickets | IsEventOrganizerOrAdmin | — | 501 (stub) |
+| GET | `/api/v1/events/{event_id}/promo-codes/` | List promo codes | IsEventOrganizerOrAdmin | — | JSON array, `PromoCodeSerializer` |
+| POST | `/api/v1/events/{event_id}/promo-codes/` | Create promo code | IsEventOrganizerOrAdmin | `PromoCodeSerializer` writable fields | 201 |
+| PATCH | `/api/v1/events/{event_id}/promo-codes/{id}/` | Update promo code | IsEventOrganizerOrAdmin | partial fields | 200 |
+| DELETE | `/api/v1/events/{event_id}/promo-codes/{id}/` | Delete promo code | IsEventOrganizerOrAdmin | — | 204 |
+| POST | `/api/v1/promo-codes/validate/` | Validate a code | IsAuthenticated (default) | `event_id, code, ticket_type_ids?` | 200, `{valid, discount_type?, discount_value?, reason?}` |
+| GET | `/api/v1/events/{event_id}/sub-units/` | List zones/sessions/competitions | AllowAny | — | JSON array, `EventSubUnitSerializer` |
+| POST | `/api/v1/events/{event_id}/sub-units/` | Create sub-unit | IsEventOrganizerOrAdmin | `EventSubUnitSerializer` fields | 201 |
+| PATCH | `/api/v1/events/{event_id}/sub-units/{id}/` | Update sub-unit | IsEventOrganizerOrAdmin | partial fields | 200 |
+| DELETE | `/api/v1/events/{event_id}/sub-units/{id}/` | Delete sub-unit | IsEventOrganizerOrAdmin | — | 204 |
+| GET | `/api/v1/tickets/{id}/` | Get issued ticket | IsEventOrganizerOrVolunteerOrAdmin | — | `TicketSerializer` |
+| GET | `/api/v1/tickets/{id}/qr-image/` | Ticket QR PNG | IsEventOrganizerOrVolunteerOrAdmin | — | `image/png` |
+| POST | `/api/v1/events/{event_id}/bookings/` | Create multi-attendee booking | AllowAny | `ticket_id, relationship, primary_account, attendees[]` | 201, `BookingSerializer` |
+| GET | `/api/v1/bookings/{booking_reference}/` | Fetch booking confirmation | IsAuthenticated + owner/staff check | — | `BookingSerializer` |
+| POST | `/api/v1/events/{event_id}/registrations/` | Legacy single-ticket registration | AllowAny | `ticket_type_id, form_data, promo_code?` | 201, `RegistrationSerializer` |
+| POST | `/api/v1/events/{event_id}/registrations/onsite/` | Staff-created on-site registration | IsEventOrganizerOrVolunteerOrAdmin | same as above | 201 |
+| GET | `/api/v1/registrations/` | List registrations (own, or all if staff) | IsAuthenticated | query: `event_id`, `status` | 200, paginated |
+| GET | `/api/v1/registrations/{id}/` | Registration detail | IsOwnerOrEventStaff | — | 200, `RegistrationSerializer` |
+| POST | `/api/v1/registrations/{id}/cancel/` | Cancel registration | IsOwnerOrEventStaff | `reason?` | 200 |
+| POST | `/api/v1/registrations/{id}/feedback/` | Post feedback | IsAuthenticated (owner check inline) | `rating?, comments?` | 201 |
