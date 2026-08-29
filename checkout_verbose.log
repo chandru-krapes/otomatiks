@@ -1,0 +1,20 @@
+* Host localhost:3000 was resolved.
+* IPv6: ::1
+* IPv4: 127.0.0.1
+*   Trying [::1]:3000...
+* Established connection to localhost (::1 port 3000) from ::1 port 55433 
+* using HTTP/1.x
+> GET /checkout HTTP/1.1
+> Host: localhost:3000
+> User-Agent: curl/8.19.0
+> Accept: */*
+> 
+* Request completely sent off
+< HTTP/1.1 200 OK
+< Date: Sat, 29 Aug 2026 15:53:34 GMT
+< Connection: keep-alive
+< Keep-Alive: timeout=5
+< Transfer-Encoding: chunked
+< 
+{ [5 bytes data]
+* Connection #0 to host localhost:3000 left intact
