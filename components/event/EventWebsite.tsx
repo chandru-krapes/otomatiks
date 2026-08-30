@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Event } from "@/lib/types";
+import type { Event, Testimonial } from "@/lib/types";
 import { buildNavLinks } from "@/lib/nav";
 import { listTestimonials } from "@/lib/api";
 import Header from "./Header";
@@ -29,12 +29,24 @@ import CartDrawer from "@/components/booking/CartDrawer";
  * alternate direction for the same reason — a page where every section
  * arrives from below feels mechanical by the third one.
  */
-export default async function EventWebsite({ event }: { event: Event }) {
+export default async function EventWebsite({
+  event,
+  testimonials: staticTestimonials,
+}: {
+  event: Event;
+  /**
+   * TEMPORARY: pass this to skip the live testimonials fetch below — used
+   * only for `STATIC_EVENT` (see `lib/resolve-event.ts`), which has no real
+   * backend id to fetch testimonials for. Every real event leaves this
+   * unset and gets the normal live fetch. Remove once `STATIC_EVENT` goes.
+   */
+  testimonials?: Testimonial[];
+}) {
   // Not part of the resolved `Event` payload — a separate endpoint (see
   // lib/api.ts `listTestimonials`). Fetched here (not inside
   // Testimonials.tsx itself) so buildNavLinks can also see whether there's
   // anything to link to.
-  const testimonials = await listTestimonials(event.id);
+  const testimonials = staticTestimonials ?? (await listTestimonials(event.id));
   const navLinks = buildNavLinks(event, testimonials.length > 0);
   const style = event.theme_color ? ({ "--accent": event.theme_color } as CSSProperties) : undefined;
 

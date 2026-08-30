@@ -1,48 +1,41 @@
-import { cookies, headers } from "next/headers";
+import { headers } from "next/headers";
 import { extractSubdomain } from "./subdomain";
 import { getEventBySlug } from "./api";
-
-// TEMPORARY, see the fallback chain below and middleware.ts.
-const TEST_SLUG_COOKIE = "otm_test_slug";
+import { STATIC_EVENT } from "./static-events/robotica";
 
 /**
- * Shared hostname → subdomain → event resolution used by every route.
+ * TEMPORARY: hosts that have no subdomain of their own to resolve a real
+ * event from — a bare Vercel preview URL, local dev, and (until it gets a
+ * real per-event subdomain wired up) the apex `otomatiks.app` itself. These
+ * get `STATIC_EVENT` (see `lib/static-events/robotica.ts`) without ever
+ * calling the backend. Every real subdomain (`robotica.otomatiks.app`,
+ * `novaris.otomatiks.app`, …) is untouched — `extractSubdomain` reads a
+ * genuine subdomain off those, so they never reach this list and keep
+ * hitting `getEventBySlug` exactly as before.
  *
- * `pathSlug`, when given, is a TEMPORARY test-only fallback: a deployment
- * that can't give itself a real subdomain (a bare Vercel preview URL,
- * `localhost:3000`) has no subdomain to resolve, so `app/[slug]/page.tsx`
- * passes the `/robotica`-style path segment here instead and this tries it
- * as an event slug once the subdomain lookup comes up empty.
+ * `otomatiks-six.vercel.app` is listed explicitly (rather than matched by
+ * pattern) because it parses as if "otomatiks-six" were a subdomain —
+ * same three-label shape as `robotica.otomatiks.app` — even though no event
+ * will ever resolve for it.
  *
- * Failing that, it falls back to the `otm_test_slug` cookie that
- * `middleware.ts` stamps when you land on `/robotica` — so pages reached by
- * an in-app link rather than a URL that carries the slug (`/checkout`,
- * `/book/[ticketId]`, `/bookings/[reference]`, …) keep resolving the same
- * test event. Remove `pathSlug`, this cookie fallback, `middleware.ts`, and
- * `app/[slug]/page.tsx` together once the test deployment is torn down —
- * every real (subdomain) request is untouched by any of this.
- *
- * Doesn't require `subdomain` to be empty before trying the cookie: a bare
- * Vercel preview host (`otomatiks-six.vercel.app`) parses as if
- * "otomatiks-six" were a subdomain (see `extractSubdomain`'s doc comment),
- * but no event will ever resolve for it — so the only thing that actually
- * matters here is whether an event was found yet, not why the lookup so
- * far came up empty.
+ * Remove this whole mechanism (this set, the branch below, and
+ * `lib/static-events/robotica.ts`) once the apex domain has a real
+ * backend-resolvable event of its own.
  */
-export async function resolveEvent(pathSlug?: string) {
+const MAIN_DOMAIN_HOSTS = new Set(["otomatiks.app", "www.otomatiks.app", "otomatiks-six.vercel.app"]);
+
+/** Shared hostname → subdomain → event resolution used by every route. */
+export async function resolveEvent() {
   const headersList = await headers();
   const host = headersList.get("host");
+  const hostname = host?.split(":")[0].trim().toLowerCase();
   const subdomain = extractSubdomain(host);
-  let event = subdomain ? await getEventBySlug(subdomain) : null;
 
-  if (!event && pathSlug) {
-    event = await getEventBySlug(pathSlug);
+  if (!subdomain || MAIN_DOMAIN_HOSTS.has(hostname ?? "")) {
+    // TEMPORARY, see MAIN_DOMAIN_HOSTS above — no backend call here at all.
+    return { subdomain: null, event: STATIC_EVENT, isStatic: true as const };
   }
 
-  if (!event && !pathSlug) {
-    const cookieSlug = (await cookies()).get(TEST_SLUG_COOKIE)?.value;
-    if (cookieSlug) event = await getEventBySlug(cookieSlug);
-  }
-
-  return { subdomain, event };
+  const event = await getEventBySlug(subdomain);
+  return { subdomain, event, isStatic: false as const };
 }
