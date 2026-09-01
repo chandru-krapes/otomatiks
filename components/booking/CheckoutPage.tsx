@@ -89,7 +89,7 @@ function applySavedStudent(attendee: Attendee, saved: SavedStudent): Attendee {
  */
 function frameSubmitError(message: string, code: string | undefined): string {
   if (code === "registration_unavailable" || code === "ticket_not_found") {
-    return `Availability changed while you were checking out: ${message}`;
+    return `Availability changed while you were booking: ${message}`;
   }
   if (code === "team_size_invalid") {
     return `Team size problem: ${message}`;
@@ -217,7 +217,7 @@ export default function CheckoutPage({ event }: { event: Event }) {
       <div className="route-transition mx-auto flex min-h-[70vh] max-w-xl flex-col items-center justify-center gap-4 px-6 text-center">
         <EmptyState
           icon={<TicketStubIcon />}
-          title="Your cart is empty"
+          title="No tickets selected yet"
           description="Add a ticket from the event page to start a booking."
         />
         <Button href="/#tickets" variant="primary">
@@ -251,11 +251,11 @@ export default function CheckoutPage({ event }: { event: Event }) {
               Back to {event.title}
             </Link>
             <h1 className="mt-3 font-boldonse text-3xl font-extrabold uppercase leading-tight tracking-tight text-primary sm:text-4xl">
-              Checkout
+              Confirm Your Booking
             </h1>
             <p className="mt-2 text-sm text-muted">
               Set up your account, add who&rsquo;s attending for each ticket, and you&rsquo;re done — one booking for
-              everything in your cart.
+              everything you&rsquo;ve selected.
             </p>
           </div>
 

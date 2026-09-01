@@ -2,12 +2,12 @@
 
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
 import { useCart } from "./CartProvider";
 import { computeBookingTotal, formatCurrency } from "@/lib/pricing";
 import Button from "@/components/ui/Button";
 import Badge from "@/components/ui/Badge";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
+import { TicketIcon } from "@/components/event/TicketButton";
 
 /** One line's contribution to the running total — team-kind bills once per
  * line regardless of member count, same rule as the single-ticket flow. */
@@ -25,7 +25,7 @@ function lineTotal(price: string, attendeeCount: number, kind: string | undefine
  * `Reveal`-wrapped (transformed-ancestor) section it's triggered from.
  */
 export default function CartDrawer() {
-  const { lines, count, isOpen, open, close, removeLine, addAttendeeToLine, removeAttendeeFromLine } = useCart();
+  const { lines, count, isOpen, open, close, removeLine, addAttendeeToLine, removeAttendeeFromLine, openCheckoutNotice } = useCart();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -63,10 +63,10 @@ export default function CartDrawer() {
         ref={toggleRef}
         type="button"
         onClick={() => (isOpen ? close() : open())}
-        aria-label={`Open ticket cart, ${count} ${count === 1 ? "attendee" : "attendees"}`}
+        aria-label={`Open your tickets, ${count} ${count === 1 ? "attendee" : "attendees"} selected`}
         className="focus-ring press fixed bottom-6 right-24 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/40 transition-all duration-[var(--dur-med)] ease-[var(--ease-out)] hover:scale-110 sm:right-[5.5rem]"
       >
-        <CartIcon />
+        <TicketIcon className="h-5 w-5" />
         {count > 0 && (
           <span className="animate-pop-in absolute -right-1 -top-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-secondary px-1 text-[11px] font-bold text-white">
             {count}
@@ -86,17 +86,17 @@ export default function CartDrawer() {
               ref={panelRef}
               role="dialog"
               aria-modal="true"
-              aria-label="Your ticket cart"
+              aria-label="Your ticket selection"
               className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col bg-background shadow-2xl"
               style={{ animation: "route-in var(--dur-med) var(--ease-out)" }}
             >
               <div className="flex items-center justify-between border-b border-primary/10 px-6 py-5">
-                <h2 className="font-display text-lg font-bold text-primary">Your Cart</h2>
+                <h2 className="font-display text-lg font-bold text-primary">Your Tickets</h2>
                 <button
                   ref={closeRef}
                   type="button"
                   onClick={close}
-                  aria-label="Close cart"
+                  aria-label="Close"
                   className="focus-ring press flex h-9 w-9 items-center justify-center rounded-full text-muted transition-colors hover:bg-primary/8 hover:text-primary"
                 >
                   <CloseIcon />
@@ -106,10 +106,10 @@ export default function CartDrawer() {
               {lines.length === 0 ? (
                 <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-secondary/10 text-secondary">
-                    <CartIcon className="h-5 w-5" />
+                    <TicketIcon className="h-5 w-5" />
                   </div>
-                  <p className="font-display text-sm font-bold text-primary">Your cart is empty</p>
-                  <p className="text-sm text-muted">Add a ticket from the tickets section to get started.</p>
+                  <p className="font-display text-sm font-bold text-primary">No tickets selected yet</p>
+                  <p className="text-sm text-muted">Choose a ticket below to start your booking.</p>
                   <Button href="#tickets" variant="secondary" size="sm" onClick={close} className="mt-2">
                     Browse tickets
                   </Button>
@@ -136,7 +136,7 @@ export default function CartDrawer() {
                               <button
                                 type="button"
                                 onClick={() => removeLine(line.id)}
-                                aria-label={`Remove ${line.ticket.name} from cart`}
+                                aria-label={`Remove ${line.ticket.name} from your booking`}
                                 className="focus-ring press shrink-0 rounded-full p-1.5 text-muted transition-colors hover:bg-red-50 hover:text-red-600"
                               >
                                 <TrashIcon />
@@ -186,13 +186,16 @@ export default function CartDrawer() {
                         <AnimatedNumber value={total} countOnView={false} format={formatCurrency} />
                       </span>
                     </div>
-                    <Link
-                      href="/checkout"
-                      onClick={close}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        close();
+                        openCheckoutNotice();
+                      }}
                       className="sweep press mt-4 flex w-full items-center justify-center rounded-full bg-secondary px-6 py-3.5 text-sm font-semibold text-white shadow-[0_6px_20px_-4px_color-mix(in_srgb,var(--secondary)_55%,transparent)] transition-all duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:-translate-y-0.5"
                     >
-                      Proceed to Checkout
-                    </Link>
+                      Continue Booking
+                    </button>
                   </div>
                 </>
               )}
@@ -201,16 +204,6 @@ export default function CartDrawer() {
           document.body,
         )}
     </>
-  );
-}
-
-function CartIcon({ className = "h-5 w-5" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 4h2l2.4 12.2a2 2 0 0 0 2 1.6h8.4a2 2 0 0 0 2-1.6L21 8H6" />
-      <circle cx="9.5" cy="20" r="1.4" />
-      <circle cx="17.5" cy="20" r="1.4" />
-    </svg>
   );
 }
 

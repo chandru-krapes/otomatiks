@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { Event, Speaker } from "@/lib/types";
 import { PLACEHOLDER } from "@/lib/placeholders";
 import SectionHeading from "./SectionHeading";
@@ -41,12 +42,12 @@ function SpeakerCard({ speaker }: { speaker: Speaker }) {
 
       <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-full border-2 border-white shadow-lg ring-2 ring-secondary/0 transition-all duration-[var(--dur-med)] ease-[var(--ease-out)] group-hover:ring-secondary/40 sm:h-28 sm:w-28 sm:border-4">
         {photo ? (
-          // eslint-disable-next-line @next/next/no-img-element -- speaker photos are R2 URLs on arbitrary hosts.
-          <img
+          <Image
             src={photo}
             alt={speaker.name}
-            loading="lazy"
-            className="h-full w-full object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-110"
+            fill
+            sizes="(min-width: 640px) 112px, 64px"
+            className="object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-110"
           />
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-primary/10 font-display text-base font-bold text-primary sm:text-2xl">

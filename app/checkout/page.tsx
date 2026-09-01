@@ -9,7 +9,7 @@ import CheckoutComingSoon from "@/components/booking/CheckoutComingSoon";
 export async function generateMetadata(): Promise<Metadata> {
   const { event } = await resolveEvent();
   if (!event) return { title: "Event Not Found" };
-  return { title: `Checkout — ${event.title}` };
+  return { title: `Complete Booking — ${event.title}` };
 }
 
 export default async function Page() {

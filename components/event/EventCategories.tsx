@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
+import Image from "next/image";
 import type { Event, TicketType } from "@/lib/types";
 import { formatClockTime, formatDate } from "@/lib/format";
 import { formatCurrency } from "@/lib/pricing";
@@ -39,10 +40,12 @@ function PinIcon() {
   );
 }
 
+/** Indian Rupee sign (₹) — this event's prices are always INR, so the icon
+ * says so rather than showing a generic/foreign currency glyph. */
 function FeeIcon() {
   return (
     <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6 4h11M6 4a3 3 0 0 0 0 6h11M6 10a3 3 0 0 1 0 6h11M9 4v16" />
+      <path d="M6 3h12M6 8h12M6 13h3M9 13c6.667 0 6.667-10 0-10m-3 10 8.5 8" />
     </svg>
   );
 }
@@ -218,12 +221,12 @@ export default function EventCategories({ event }: { event: Event }) {
                             className="h-full w-full object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
                           />
                         ) : (
-                          // eslint-disable-next-line @next/next/no-img-element -- category media is an R2 URL on an arbitrary host.
-                          <img
+                          <Image
                             src={heroItem.media_url}
                             alt={heroItem.caption ?? ""}
-                            loading="lazy"
-                            className="h-full w-full object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
+                            fill
+                            sizes="(min-width: 640px) 700px, 100vw"
+                            className="object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
                           />
                         )}
                         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-primary/40 via-transparent to-transparent" />

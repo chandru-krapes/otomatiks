@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import Image from "next/image";
 import type { Event } from "@/lib/types";
 import { resolveBannerUrl } from "@/lib/api";
 import { getRegistrationCta } from "@/lib/registration";
@@ -65,8 +66,14 @@ export default function Hero({ event }: { event: Event }) {
               fixed previously.
             */}
             <div className="absolute inset-0 h-full w-full">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={banner} alt="" className="h-full w-full object-cover" />
+              <Image
+                src={banner}
+                alt=""
+                fill
+                priority
+                sizes="100vw"
+                className="object-cover"
+              />
             </div>
             {/*
               Legibility scrim. The banner is an arbitrary organiser upload —

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 import type { GalleryItem } from "@/lib/types";
 
 function CloseIcon() {
@@ -147,11 +148,21 @@ export default function Lightbox({
               className="max-h-[75vh] w-full rounded-xl bg-black shadow-2xl"
             />
           ) : (
-            // eslint-disable-next-line @next/next/no-img-element -- gallery photos are R2 URLs on arbitrary hosts.
-            <img
+            // Opened on demand — the user is looking at this immediately, so
+            // it loads eagerly rather than behind next/image's default
+            // viewport-lazy behavior.
+            <Image
               src={active.media_url}
               alt={active.caption ?? ""}
-              loading="lazy"
+              loading="eager"
+              width={1200}
+              height={900}
+              sizes="100vw"
+              // True dimensions are unknown ahead of time (arbitrary remote
+              // upload) — width/height above only seed next/image's aspect
+              // ratio math; these overrides let it render at its real
+              // proportions instead of stretching to 1200x900.
+              style={{ width: "auto", height: "auto" }}
               className="max-h-[75vh] w-auto rounded-xl object-contain shadow-2xl"
             />
           )}

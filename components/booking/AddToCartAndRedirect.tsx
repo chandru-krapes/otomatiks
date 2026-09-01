@@ -27,7 +27,7 @@ export default function AddToCartAndRedirect({ ticket }: { ticket: TicketType })
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center" role="status">
       <Spinner className="h-6 w-6 text-secondary" />
-      <p className="text-sm font-medium text-muted">Adding {ticket.name} to your cart…</p>
+      <p className="text-sm font-medium text-muted">Adding {ticket.name} to your booking…</p>
     </div>
   );
 }

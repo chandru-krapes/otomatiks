@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { Event, Sponsor } from "@/lib/types";
 import { getRegistrationCta } from "@/lib/registration";
 import { PLACEHOLDER } from "@/lib/placeholders";
@@ -18,13 +19,15 @@ function SponsorCard({ sponsor }: { sponsor: Sponsor }) {
     "card card-interactive group flex h-16 w-36 shrink-0 items-center justify-center rounded-2xl px-6 sm:h-20 sm:w-44";
 
   const inner = src ? (
-    // eslint-disable-next-line @next/next/no-img-element -- sponsor logos are R2 URLs on arbitrary hosts.
-    <img
-      src={src}
-      alt={sponsor.name}
-      loading="lazy"
-      className="max-h-10 w-auto object-contain grayscale transition-all duration-[var(--dur-med)] ease-[var(--ease-out)] group-hover:grayscale-0 group-hover:scale-105 sm:max-h-12"
-    />
+    <div className="relative h-10 w-full sm:h-12">
+      <Image
+        src={src}
+        alt={sponsor.name}
+        fill
+        sizes="176px"
+        className="object-contain grayscale transition-all duration-[var(--dur-med)] ease-[var(--ease-out)] group-hover:grayscale-0 group-hover:scale-105"
+      />
+    </div>
   ) : (
     <span className="text-center text-sm font-bold uppercase leading-tight tracking-wider text-primary/70 transition-colors duration-[var(--dur-med)] group-hover:text-primary">
       {sponsor.name}

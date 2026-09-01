@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { TicketType } from "@/lib/types";
 import { emptyAttendee, type Attendee } from "@/lib/booking";
@@ -13,6 +13,11 @@ interface CartContextValue {
   isOpen: boolean;
   open: () => void;
   close: () => void;
+  /** The in-page "booking isn't open yet" dialog (see BookingNotOpenDialog)
+   * — separate from `isOpen`/the drawer so opening one can close the other. */
+  checkoutNoticeOpen: boolean;
+  openCheckoutNotice: () => void;
+  closeCheckoutNotice: () => void;
   /**
    * Adds one attendee slot for this ticket. An individual ticket merges
    * into its existing line if there is one (one more attendee on the same
@@ -48,6 +53,7 @@ function uid(): string {
 export function CartProvider({ children }: { children: ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [checkoutNoticeOpen, setCheckoutNoticeOpen] = useState(false);
   // Distinguishes "haven't read storage yet" from "read storage, it was
   // empty" — without this, the very first render's empty `lines` would get
   // written back to storage and silently wipe out whatever was actually
@@ -66,27 +72,45 @@ export function CartProvider({ children }: { children: ReactNode }) {
     saveCart(lines);
   }, [lines, hydrated]);
 
-  function addTicket(ticket: TicketType) {
+  // Every setter below is wrapped in useCallback and the context value itself
+  // in useMemo (further down). CartProvider mounts once at the root layout,
+  // so without this every consumer of useCart() anywhere on any page —
+  // there are now several per event page, not just CartDrawer, since
+  // AddToCartButton reads cart state too — would re-render on every cart
+  // mutation, because a plain object literal here would get a brand new
+  // identity (and every handler a brand new closure) on every render
+  // regardless of whether anything that render actually depended on
+  // changed.
+  const addTicket = useCallback((ticket: TicketType) => {
+    // Only pop the drawer open for the very first ticket added to an empty
+    // cart — a nice "here's what happened" reveal without it hijacking the
+    // page on every subsequent click. Later adds get their feedback in
+    // place instead (see AddToCartButton's stepper).
     setLines((current) => {
+      const wasEmpty = current.length === 0;
       const isTeam = ticket.kind === "team";
+      let next = current;
       if (!isTeam) {
         const existingIndex = current.findIndex((line) => line.ticket.id === ticket.id);
         if (existingIndex !== -1) {
-          return current.map((line, index) =>
+          next = current.map((line, index) =>
             index === existingIndex ? { ...line, attendees: [...line.attendees, emptyAttendee()] } : line,
           );
         }
       }
-      return [...current, { id: uid(), ticket, attendees: [emptyAttendee()] }];
+      if (next === current) {
+        next = [...current, { id: uid(), ticket, attendees: [emptyAttendee()] }];
+      }
+      if (wasEmpty) setIsOpen(true);
+      return next;
     });
-    setIsOpen(true);
-  }
+  }, []);
 
-  function removeLine(lineId: string) {
+  const removeLine = useCallback((lineId: string) => {
     setLines((current) => current.filter((line) => line.id !== lineId));
-  }
+  }, []);
 
-  function addAttendeeToLine(lineId: string) {
+  const addAttendeeToLine = useCallback((lineId: string) => {
     setLines((current) =>
       current.map((line) => {
         if (line.id !== lineId) return line;
@@ -95,44 +119,70 @@ export function CartProvider({ children }: { children: ReactNode }) {
         return { ...line, attendees: [...line.attendees, emptyAttendee()] };
       }),
     );
-  }
+  }, []);
 
-  function removeAttendeeFromLine(lineId: string, index: number) {
+  const removeAttendeeFromLine = useCallback((lineId: string, index: number) => {
     setLines((current) =>
       current
         .map((line) => (line.id === lineId ? { ...line, attendees: line.attendees.filter((_, i) => i !== index) } : line))
         .filter((line) => line.attendees.length > 0),
     );
-  }
+  }, []);
 
-  function updateAttendee(lineId: string, index: number, attendee: Attendee) {
+  const updateAttendee = useCallback((lineId: string, index: number, attendee: Attendee) => {
     setLines((current) =>
       current.map((line) =>
         line.id === lineId ? { ...line, attendees: line.attendees.map((a, i) => (i === index ? attendee : a)) } : line,
       ),
     );
-  }
+  }, []);
 
-  function clear() {
+  const clear = useCallback(() => {
     setLines([]);
     clearStoredCart();
-  }
+  }, []);
+
+  const open = useCallback(() => setIsOpen(true), []);
+  const close = useCallback(() => setIsOpen(false), []);
+  const openCheckoutNotice = useCallback(() => setCheckoutNoticeOpen(true), []);
+  const closeCheckoutNotice = useCallback(() => setCheckoutNoticeOpen(false), []);
 
   const count = useMemo(() => lines.reduce((sum, line) => sum + line.attendees.length, 0), [lines]);
 
-  const value: CartContextValue = {
-    lines,
-    count,
-    isOpen,
-    open: () => setIsOpen(true),
-    close: () => setIsOpen(false),
-    addTicket,
-    removeLine,
-    addAttendeeToLine,
-    removeAttendeeFromLine,
-    updateAttendee,
-    clear,
-  };
+  const value: CartContextValue = useMemo(
+    () => ({
+      lines,
+      count,
+      isOpen,
+      open,
+      close,
+      checkoutNoticeOpen,
+      openCheckoutNotice,
+      closeCheckoutNotice,
+      addTicket,
+      removeLine,
+      addAttendeeToLine,
+      removeAttendeeFromLine,
+      updateAttendee,
+      clear,
+    }),
+    [
+      lines,
+      count,
+      isOpen,
+      open,
+      close,
+      checkoutNoticeOpen,
+      openCheckoutNotice,
+      closeCheckoutNotice,
+      addTicket,
+      removeLine,
+      addAttendeeToLine,
+      removeAttendeeFromLine,
+      updateAttendee,
+      clear,
+    ],
+  );
 
   return <CartContext.Provider value={value}>{children}</CartContext.Provider>;
 }

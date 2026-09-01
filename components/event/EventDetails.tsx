@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { Event } from "@/lib/types";
 import { formatDateRange } from "@/lib/format";
 import { resolveBannerUrl } from "@/lib/api";
@@ -74,12 +75,12 @@ export default function EventDetails({ event }: { event: Event }) {
           <div className="group relative aspect-[4/3] overflow-hidden rounded-3xl shadow-2xl shadow-accent/20">
             {banner ? (
               <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
+                <Image
                   src={banner}
                   alt={event.title}
-                  loading="lazy"
-                  className="h-full w-full object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
+                  fill
+                  sizes="(min-width: 1024px) 512px, 100vw"
+                  className="object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
                 />
                 {/* Slight bottom vignette, so the image reads as a composed
                     plate rather than a raw upload. */}

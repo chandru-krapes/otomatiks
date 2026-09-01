@@ -1,6 +1,7 @@
 "use client";
 
 import { useId } from "react";
+import Image from "next/image";
 import type { Event, GalleryItem } from "@/lib/types";
 import ArrowFlourish from "@/components/ui/ArrowFlourish";
 import EmptyState from "@/components/ui/EmptyState";
@@ -43,12 +44,12 @@ function GalleryTile({
           className="h-full w-full object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
         />
       ) : (
-        // eslint-disable-next-line @next/next/no-img-element -- gallery photos are R2 URLs on arbitrary hosts.
-        <img
+        <Image
           src={item.media_url}
           alt={item.caption ?? ""}
-          loading="lazy"
-          className="h-full w-full object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
+          fill
+          sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
+          className="object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
         />
       )}
 

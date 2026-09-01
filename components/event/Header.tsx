@@ -1,3 +1,4 @@
+import Image from "next/image";
 import type { Event } from "@/lib/types";
 import { resolveMediaUrl } from "@/lib/api";
 import { getRegistrationCta } from "@/lib/registration";
@@ -30,10 +31,11 @@ export default function Header({ event, navLinks }: { event: Event; navLinks: im
           aria-label={`${event.title} — back to top`}
         >
           {logo ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <Image
               src={logo}
               alt={event.title}
+              width={160}
+              height={32}
               className="h-8 w-auto shrink-0 object-contain transition-transform duration-[var(--dur-med)] ease-[var(--ease-out)] group-hover:scale-105"
             />
           ) : (

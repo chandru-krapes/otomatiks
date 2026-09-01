@@ -19,6 +19,7 @@ import Footer from "./Footer";
 import Reveal from "./Reveal";
 import BackToTop from "./BackToTop";
 import CartDrawer from "@/components/booking/CartDrawer";
+import BookingNotOpenDialog from "@/components/booking/BookingNotOpenDialog";
 
 /**
  * Section order and page rhythm.
@@ -130,6 +131,7 @@ export default async function EventWebsite({
           control has no place on /checkout (it *is* the cart) or the
           account routes. Same precedent as BackToTop above. */}
       <CartDrawer />
+      <BookingNotOpenDialog event={event} />
     </div>
   );
 }
