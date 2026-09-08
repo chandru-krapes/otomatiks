@@ -1,7 +1,18 @@
+"use client";
+
+import { memo, useCallback, useState } from "react";
 import type { SavedStudent } from "@/lib/types";
-import type { Attendee, Relationship } from "@/lib/booking";
+import {
+  applySavedStudent,
+  CHENNAI_SCHOOLS,
+  GRADE_OPTIONS,
+  OTHER_SCHOOL_VALUE,
+  TAMIL_NADU_DISTRICTS,
+  type Attendee,
+  type Relationship,
+} from "@/lib/booking";
 import { TextField } from "@/components/ui/Field";
-import { Select } from "@/components/ui/Select";
+import { Select, SelectField } from "@/components/ui/Select";
 import DatePicker from "@/components/ui/DatePicker";
 
 /**
@@ -40,36 +51,136 @@ function SavedStudentPicker({
   );
 }
 
+/** Fixed grade dropdown — Pre-School through 12. Falls back to including
+ * whatever value is already set (e.g. loaded from a saved student in some
+ * other shape) as an extra option, so switching to this dropdown never
+ * silently blanks out existing data. */
+function GradeField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const options = GRADE_OPTIONS.includes(value) || !value ? GRADE_OPTIONS : [value, ...GRADE_OPTIONS];
+  return (
+    <SelectField label="Grade" required value={value} onChange={(event) => onChange(event.target.value)} placeholder="Select grade">
+      <option value="">Select grade</option>
+      {options.map((grade) => (
+        <option key={grade} value={grade}>
+          {grade}
+        </option>
+      ))}
+    </SelectField>
+  );
+}
+
 /**
- * One attendee's editable fields — a student's, or a parent/institute's
- * charge's, depending on `relationship`. Shared by every attendee slot on
- * the checkout page, across every cart line: a "Rover Bot Workshop" team
- * member and a "UX Design Trend Party" individual attendee use the exact
- * same card, just with a different `itemLabel` and `onRemove` wiring from
- * the cart line that owns them.
+ * School dropdown of common Chennai schools, with a manual fallback: picking
+ * "Other" (or already having a value that isn't on the list — a saved
+ * student's school, say) swaps in a free-text field, so a school that isn't
+ * listed — or its full address, per the field's own hint — can still be
+ * entered instead of forcing a pick from the list.
  */
-export default function AttendeeCard({
+function SchoolField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const isPreset = CHENNAI_SCHOOLS.includes(value);
+  const [manual, setManual] = useState(value !== "" && !isPreset);
+
+  if (manual) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <TextField
+          label="School"
+          required
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="School name"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            setManual(false);
+            onChange("");
+          }}
+          className="focus-ring self-start rounded-md text-xs font-semibold text-secondary transition-colors hover:text-primary"
+        >
+          Choose from the list instead
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <SelectField
+      label="School"
+      required
+      value={isPreset ? value : ""}
+      placeholder="Select school"
+      onChange={(event) => {
+        if (event.target.value === OTHER_SCHOOL_VALUE) {
+          setManual(true);
+          onChange("");
+        } else {
+          onChange(event.target.value);
+        }
+      }}
+    >
+      <option value="">Select school</option>
+      {CHENNAI_SCHOOLS.map((school) => (
+        <option key={school} value={school}>
+          {school}
+        </option>
+      ))}
+      <option value={OTHER_SCHOOL_VALUE}>Other — enter manually</option>
+    </SelectField>
+  );
+}
+
+/** The school's district — every Tamil Nadu district, paired with `SchoolField`
+ * on their own row (see the layout below) rather than a freeform address. */
+function DistrictField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <SelectField label="District" required value={value} onChange={(event) => onChange(event.target.value)} placeholder="Select district">
+      <option value="">Select district</option>
+      {TAMIL_NADU_DISTRICTS.map((district) => (
+        <option key={district} value={district}>
+          {district}
+        </option>
+      ))}
+    </SelectField>
+  );
+}
+
+function AttendeeCard({
   attendee,
   itemLabel,
   relationship,
   savedStudents,
-  onChange,
-  onRemove,
-  onFillFromSaved,
+  lineId,
+  index,
+  canRemove,
+  updateAttendee,
+  removeAttendeeFromLine,
 }: {
   attendee: Attendee;
   /** e.g. "Team Member 1", "Attendee 2", "Student 1". */
   itemLabel: string;
   relationship: Relationship;
   savedStudents: SavedStudent[];
-  onChange: (next: Attendee) => void;
-  /** Omit to hide the Remove action — the last remaining slot on a line
-   * can't be removed (removing it removes the whole line instead, from
-   * the cart UI that owns this list). */
-  onRemove?: () => void;
-  onFillFromSaved: (student: SavedStudent) => void;
+  lineId: string;
+  index: number;
+  /** The last remaining slot on a line can't be removed (removing it removes
+   * the whole line instead, from the cart UI that owns this list) — hides
+   * the Remove action when `false`. */
+  canRemove: boolean;
+  updateAttendee: (lineId: string, index: number, attendee: Attendee) => void;
+  removeAttendeeFromLine: (lineId: string, index: number) => void;
 }) {
   const isStudent = relationship === "student";
+
+  const onChange = useCallback(
+    (next: Attendee) => updateAttendee(lineId, index, next),
+    [updateAttendee, lineId, index],
+  );
+  const onRemove = canRemove ? () => removeAttendeeFromLine(lineId, index) : undefined;
+  const onFillFromSaved = useCallback(
+    (student: SavedStudent) => updateAttendee(lineId, index, applySavedStudent(attendee, student)),
+    [updateAttendee, lineId, index, attendee],
+  );
 
   return (
     <div className="animate-pop-in rounded-2xl border border-primary/10 bg-white/60 p-5 transition-colors duration-[var(--dur-med)] focus-within:border-primary/25 sm:p-6">
@@ -100,13 +211,7 @@ export default function AttendeeCard({
             value={attendee.name}
             onChange={(event) => onChange({ ...attendee, name: event.target.value })}
           />
-          <TextField
-            label="Grade"
-            required
-            value={attendee.grade}
-            onChange={(event) => onChange({ ...attendee, grade: event.target.value })}
-            placeholder="e.g. 8th"
-          />
+          <GradeField value={attendee.grade} onChange={(grade) => onChange({ ...attendee, grade })} />
           <TextField
             label="Email"
             required
@@ -121,42 +226,35 @@ export default function AttendeeCard({
             value={attendee.phone}
             onChange={(event) => onChange({ ...attendee, phone: event.target.value })}
           />
-          <TextField
-            label="School"
-            required
-            value={attendee.school}
-            onChange={(event) => onChange({ ...attendee, school: event.target.value })}
-          />
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <TextField
             label="Full name"
             required
             value={attendee.name}
             onChange={(event) => onChange({ ...attendee, name: event.target.value })}
           />
-          <TextField
-            label="Grade"
-            required
-            value={attendee.grade}
-            onChange={(event) => onChange({ ...attendee, grade: event.target.value })}
-            placeholder="e.g. 8th"
-          />
+          <GradeField value={attendee.grade} onChange={(grade) => onChange({ ...attendee, grade })} />
           <DatePicker
             label="Date of birth"
             required
             value={attendee.dob}
             onChange={(event) => onChange({ ...attendee, dob: event.target.value })}
           />
-          <TextField
-            label="School"
-            required
-            value={attendee.school}
-            onChange={(event) => onChange({ ...attendee, school: event.target.value })}
-          />
         </div>
       )}
+
+      {/* School and its district share their own row, below whichever set of
+          fields above — a long school name no longer competes for grid
+          width against Full name/Grade/DOB the way it did when all four
+          fields sat in one row together. */}
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <SchoolField value={attendee.school} onChange={(school) => onChange({ ...attendee, school })} />
+        <DistrictField value={attendee.district} onChange={(district) => onChange({ ...attendee, district })} />
+      </div>
     </div>
   );
 }
+
+export default memo(AttendeeCard);

@@ -6,12 +6,7 @@ import SectionHeading from "./SectionHeading";
 import TicketButton from "./TicketButton";
 import EmptyState, { HandshakeIcon } from "@/components/ui/EmptyState";
 
-/**
- * Sponsors, all in one continuously scrolling marquee — no tier grouping or
- * row labels. Every logo gets the same card treatment (grayscale, lifting
- * to full colour on hover) regardless of `Sponsor.tier`; scale/prominence
- * isn't used to imply a hierarchy here.
- */
+// Sponsors, all in one continuously scrolling marquee for the event website
 function SponsorCard({ sponsor }: { sponsor: Sponsor }) {
   const src = sponsor.logo_url;
 
@@ -39,8 +34,6 @@ function SponsorCard({ sponsor }: { sponsor: Sponsor }) {
       href={sponsor.website_url}
       target="_blank"
       rel="noopener noreferrer"
-      // The logo is the accessible name; without this a screen reader hears
-      // only "link".
       aria-label={`${sponsor.name} (opens in a new tab)`}
       className={`${className} focus-ring`}
     >
@@ -71,8 +64,6 @@ export default function Sponsors({ event }: { event: Event }) {
             description="Sponsors and partners for this event will be listed here once confirmed."
           />
         ) : (
-          /* Marquee wrapper — the hover-pause is handled in CSS via
-             `.marquee-wrapper:hover .animate-marquee`. */
           <div className="marquee-wrapper relative overflow-hidden">
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-20 bg-gradient-to-r from-tint-cool to-transparent" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-20 bg-gradient-to-l from-tint-cool to-transparent" />
@@ -81,8 +72,6 @@ export default function Sponsors({ event }: { event: Event }) {
               {sponsors.map((sponsor) => (
                 <SponsorCard key={`a-${sponsor.id}`} sponsor={sponsor} />
               ))}
-              {/* Duplicate copy for the seamless loop. Hidden from assistive
-                  tech so every sponsor isn't announced twice. */}
               <div className="flex gap-4" aria-hidden="true">
                 {sponsors.map((sponsor) => (
                   <SponsorCard key={`b-${sponsor.id}`} sponsor={sponsor} />

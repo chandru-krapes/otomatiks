@@ -1,11 +1,6 @@
 import Parallax from "./Parallax";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
 
-/*
- * Organisation-level figures about Otomatiks itself, not about the event
- * this subdomain resolved to — which is why they're static here rather than
- * read from the event payload. Stored as numbers so they can count up.
- */
 const STORY_BUBBLES = [
   { id: "sb-1", value: 14, suffix: "+", label: "Years of Experience" },
   { id: "sb-2", value: 20, suffix: "+", label: "Hubs Worldwide" },
@@ -29,9 +24,6 @@ export default function About() {
             <div key={item.id} className="group flex flex-col items-center text-center">
               <div className="relative">
                 <div className="flex h-28 w-28 items-center justify-center rounded-full bg-secondary/10 overflow-hidden text-secondary transition-transform duration-500 group-hover:-translate-y-1.5 sm:h-32 sm:w-32 shadow-lg shadow-secondary/5">
-                  {/* Icon GIFs have real alpha transparency baked in (see public/icons/) — no
-                      blend-mode or backing-plate trick needed to sit cleanly on the pink circle. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element -- animated GIF; next/image can't optimise these and would freeze the frame. */}
                   <img
                     src={ICONS[index % ICONS.length]}
                     alt=""

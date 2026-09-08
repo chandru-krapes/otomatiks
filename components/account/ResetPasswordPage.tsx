@@ -10,14 +10,6 @@ import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 
-/**
- * Step 2 of the shared password-reset flow — `POST
- * /api/v1/auth/password-reset/confirm/` with the `token` from the emailed
- * link. Not account-type-specific (see ForgotPasswordPage's doc comment),
- * so on success this can't know whether the visitor holds a booking or
- * community account — it offers both login destinations rather than
- * guessing.
- */
 export default function ResetPasswordPage() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");

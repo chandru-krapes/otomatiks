@@ -52,15 +52,7 @@ function TestimonialCard({ testimonial }: { testimonial: Testimonial }) {
   );
 }
 
-/**
- * Platform-wide client feedback (see `Testimonial` in lib/types.ts — the
- * `/testimonials/` endpoint isn't scoped to one event). A horizontal
- * scroll-snap carousel: full native scrolling under the hood (so a swipe or
- * a drag works exactly like anywhere else on a touch device), with
- * prev/next controls and dot indicators layered on top for pointer/keyboard
- * users, and gentle autoplay that pauses on hover/focus and never runs at
- * all under `prefers-reduced-motion`.
- */
+// Platform-wide client feedback for the event website
 export default function Testimonials({ testimonials }: { testimonials: Testimonial[] }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -85,8 +77,7 @@ export default function Testimonials({ testimonials }: { testimonials: Testimoni
     });
   }
 
-  // Tracks which card is actually front-and-centre — covers manual
-  // swipe/drag scrolling too, not just the button/autoplay-driven case.
+  // Tracks which card is actually front-and-centre
   useEffect(() => {
     const track = trackRef.current;
     if (!track || count === 0) return;
@@ -119,15 +110,11 @@ export default function Testimonials({ testimonials }: { testimonials: Testimoni
     if (count <= 1 || paused || reducedMotion()) return;
     const id = setInterval(() => go(1), AUTOPLAY_MS);
     return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `go` reads state via its functional updater, not this closure.
   }, [paused, count]);
 
   return (
     <section id="testimonials" className="section-warm relative overflow-hidden px-6 py-24 lg:px-10">
       <div className="mx-auto max-w-6xl">
-        {/* Compact arrow-flanked eyebrow, distinct from SectionHeading's
-            treatment elsewhere — this section reads as a single centred
-            statement rather than a header over a content grid. */}
         <div className="flex flex-col items-center text-center">
           <p className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.22em] text-primary">
             <ArrowFlourish />
@@ -154,7 +141,6 @@ export default function Testimonials({ testimonials }: { testimonials: Testimoni
             onFocusCapture={() => setPaused(true)}
             onBlurCapture={() => setPaused(false)}
           >
-            {/* Edge fades, matching the sponsor marquee's treatment. */}
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r from-tint-warm to-transparent sm:w-20" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-tint-warm to-transparent sm:w-20" />
 

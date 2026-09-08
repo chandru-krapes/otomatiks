@@ -4,15 +4,23 @@ import type {
   AuthUser,
   BookingCreatePayload,
   BookingResponse,
+  CheckoutOtpRequestPayload,
+  CheckoutOtpVerifyPayload,
+  CheckoutPhoneVerifyPayload,
   ChildClaimPayload,
   CommunityProfileResponse,
   Event,
   EventListResponse,
+  FunnelTrackPayload,
+  LoginOtpRequestPayload,
+  LoginOtpVerifyPayload,
   LoginPayload,
   PaginatedResponse,
   PasswordResetConfirmPayload,
   PasswordResetRequestPayload,
   PaymentOrderResponse,
+  PromoCodeValidatePayload,
+  PromoCodeValidateResponse,
   RegisterPayload,
   RegistrationHistoryItem,
   SavedStudent,
@@ -20,6 +28,8 @@ import type {
   TestimonialInput,
   TicketType,
   VerifyEmailPayload,
+  ZohoPayMockSimulatePayload,
+  ZohoPayMockSimulateResponse,
 } from "./types";
 
 /** `banner_url` is always a full URL — the backend uploads it to Cloudflare R2
@@ -150,10 +160,41 @@ export type ApiResult<T> =
   | { ok: false; status: number | null; message: string; fieldErrors?: Record<string, string[]>; code?: string };
 
 /**
+ * Digs out the first actual leaf string from a DRF error body. Flat
+ * validation errors are `{field: ["message"]}`, but a nested write (this
+ * booking-create endpoint's `competitions: [{attendees: [{school: [...]}]}]`
+ * is exactly this shape) comes back with objects and arrays nested several
+ * levels deep — naively `String()`-ing one of those produces the literal
+ * text "[object Object]" instead of the message inside it. Exported so
+ * lib/adminApi.ts's own error parser can share it rather than repeating the
+ * same bug independently.
+ */
+export function firstErrorString(value: unknown): string | null {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = firstErrorString(item);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (value && typeof value === "object") {
+    for (const nested of Object.values(value)) {
+      const found = firstErrorString(nested);
+      if (found) return found;
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
  * Turns a non-2xx response body into an `ApiResult` error, handling DRF's two
  * error shapes uniformly: structured `{detail, code}` (capacity/not-found/
  * account-gating/"already submitted" errors) and the default
- * `{field: [errors]}` validation-error shape. Shared by every write below —
+ * `{field: [errors]}` validation-error shape — including nested writes,
+ * where a "field" can itself be an array of objects rather than an array of
+ * strings (see `firstErrorString` above). Shared by every write below —
  * `postJson` and `sendAuthedJson`.
  */
 function parseErrorResult(status: number, body: unknown): ApiResult<never> {
@@ -163,9 +204,11 @@ function parseErrorResult(status: number, body: unknown): ApiResult<never> {
   }
   const fieldErrors: Record<string, string[]> = {};
   for (const [field, value] of Object.entries(errorBody)) {
-    if (Array.isArray(value)) fieldErrors[field] = value.map(String);
+    if (!Array.isArray(value)) continue;
+    const messages = value.map((item) => (typeof item === "string" ? item : (firstErrorString(item) ?? "Invalid value.")));
+    fieldErrors[field] = messages;
   }
-  const firstMessage = Object.values(fieldErrors)[0]?.[0];
+  const firstMessage = firstErrorString(errorBody);
   return {
     ok: false,
     status,
@@ -324,6 +367,55 @@ export async function createPaymentOrder(
   );
 }
 
+/**
+ * `POST /api/v1/payments/zohopay/mock/simulate/` — stands in for handing
+ * `payments_session_id` to Zoho's real checkout widget: finishes the mock
+ * payment and self-delivers the signed webhook to the backend's own
+ * `/payments/zohopay/webhook/` route, so the booking's status is already
+ * updated by the time this resolves. 404s unless the backend has
+ * `ZOHOPAY_MOCK_MODE=True` — callers should treat a 404 here as "there's no
+ * real payment integration to fall back to yet" rather than a generic error.
+ */
+export async function simulateZohoPayMock(
+  payload: ZohoPayMockSimulatePayload,
+): Promise<ApiResult<ZohoPayMockSimulateResponse>> {
+  return postJson<ZohoPayMockSimulateResponse>(`${API_BASE_URL}/api/v1/payments/zohopay/mock/simulate/`, payload);
+}
+
+/**
+ * `POST /api/v1/promo-codes/validate/` — the "Apply" button's pre-check.
+ * Always resolves `ok: true` for a well-formed request even when the code
+ * itself isn't usable (`data.valid === false`, with `data.reason` saying
+ * why) — that's the backend's own "the check succeeded" vs. "the code
+ * failed" distinction, not a network/request failure. No auth required, and
+ * this doesn't consume a use — redeeming happens inside `createBooking`
+ * (`promo_code` on `BookingCreatePayload`).
+ */
+export async function validatePromoCode(
+  payload: PromoCodeValidatePayload,
+): Promise<ApiResult<PromoCodeValidateResponse>> {
+  return postJson<PromoCodeValidateResponse>(`${API_BASE_URL}/api/v1/promo-codes/validate/`, payload);
+}
+
+/**
+ * `POST /api/v1/analytics/funnel/track/` — `AllowAny`, fire-and-forget from
+ * the frontend's own perspective (see lib/funnel.ts, the only caller: it
+ * never awaits or surfaces this to the UI, since a dropped analytics beacon
+ * shouldn't ever block or error out a real user action). `accessToken` is
+ * optional and *not* part of the documented request shape — it's only sent
+ * so a step that happens to fire after the visitor OTP-verifies attaches to
+ * `request.user` server-side immediately rather than only on their next
+ * request; omitted entirely for an anonymous step, same as every other
+ * optional-auth call in this file.
+ */
+export async function trackFunnelEvent(payload: FunnelTrackPayload, accessToken?: string): Promise<ApiResult<unknown>> {
+  return postJson<unknown>(
+    `${API_BASE_URL}/api/v1/analytics/funnel/track/`,
+    payload,
+    accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+  );
+}
+
 const AUTH_ENDPOINT = `${API_BASE_URL}/api/v1/auth/`;
 
 /**
@@ -338,6 +430,58 @@ export async function registerAccount(payload: RegisterPayload): Promise<ApiResu
 
 export async function loginAccount(payload: LoginPayload): Promise<ApiResult<AuthTokens & { user: AuthUser }>> {
   return postJson<AuthTokens & { user: AuthUser }>(`${AUTH_ENDPOINT}login/`, payload);
+}
+
+/**
+ * `POST /api/v1/auth/otp/request/` — the standalone `/login` page's email
+ * step, for an account that already exists (password login is retired
+ * entirely; this is the only way back into a booking account now). Same
+ * generic `{ message }` response whether or not the email is registered —
+ * see `LoginOtpRequestPayload`.
+ */
+export async function requestLoginOtp(payload: LoginOtpRequestPayload): Promise<ApiResult<{ message: string }>> {
+  return postJson<{ message: string }>(`${AUTH_ENDPOINT}otp/request/`, payload);
+}
+
+/** `POST /api/v1/auth/otp/login/` — completes the `/login` page's OTP step. Same tokens+user shape as `loginAccount()`. */
+export async function verifyLoginOtp(payload: LoginOtpVerifyPayload): Promise<ApiResult<AuthTokens & { user: AuthUser }>> {
+  return postJson<AuthTokens & { user: AuthUser }>(`${AUTH_ENDPOINT}otp/login/`, payload);
+}
+
+/**
+ * `POST /api/v1/auth/checkout/otp/request/` — checkout's email-verification
+ * step. Sends a one-time code to `email`; may create a passwordless booking
+ * account on the backend if this email hasn't registered before, but never
+ * reveals that either way (`{ message }` only) — same anti-enumeration shape
+ * as `requestPasswordReset` below.
+ */
+export async function requestCheckoutOtp(payload: CheckoutOtpRequestPayload): Promise<ApiResult<{ message: string }>> {
+  return postJson<{ message: string }>(`${AUTH_ENDPOINT}checkout/otp/request/`, payload);
+}
+
+/**
+ * `POST /api/v1/auth/checkout/otp/verify/` — completes checkout's OTP step.
+ * Same response shape as `loginAccount()` (tokens + user), whether this
+ * verified a brand-new account or logged an existing one back in.
+ */
+export async function verifyCheckoutOtp(
+  payload: CheckoutOtpVerifyPayload,
+): Promise<ApiResult<AuthTokens & { user: AuthUser }>> {
+  return postJson<AuthTokens & { user: AuthUser }>(`${AUTH_ENDPOINT}checkout/otp/verify/`, payload);
+}
+
+/**
+ * `POST /api/v1/auth/checkout/phone/verify/` — checkout's phone-verification step, the
+ * counterpart to `requestCheckoutOtp`/`verifyCheckoutOtp` (email) combined into one call: by
+ * the time the frontend has an `id_token` to send here, Firebase's client SDK has already sent
+ * the SMS and confirmed the code itself (see lib/firebase.ts) — there's no separate "request a
+ * code" step on this backend for phone. Same tokens+user response shape as `verifyCheckoutOtp`,
+ * whether this verified a brand-new account or logged an existing one back in.
+ */
+export async function verifyCheckoutPhone(
+  payload: CheckoutPhoneVerifyPayload,
+): Promise<ApiResult<AuthTokens & { user: AuthUser }>> {
+  return postJson<AuthTokens & { user: AuthUser }>(`${AUTH_ENDPOINT}checkout/phone/verify/`, payload);
 }
 
 /**

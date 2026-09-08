@@ -56,6 +56,22 @@ export interface Sponsor {
   logo_url?: string | null;
 }
 
+/**
+ * One "What You Get" highlight (trophy, medal, certificate, prize pool, ...) on the public
+ * event page. `event` is `null` when the perk is platform-wide — the admin set it to show on
+ * every event rather than one in particular (see the backend's Perk model docstring). The
+ * public site never needs to know which: `Event.perks` already comes back merged and ordered.
+ */
+export interface Perk {
+  id: number | string;
+  event: number | string | null;
+  title: string;
+  description?: string;
+  /** Uploaded via the backend's Cloudflare R2 upload flow — always a full URL, never a local path. */
+  icon_url?: string | null;
+  order?: number;
+}
+
 /** `TicketAccess` — read-only, fixed per ticket type (what it grants), not buyer-selectable. */
 export interface TicketAccess {
   id: number | string;
@@ -139,6 +155,10 @@ export interface BookingAttendeeInput {
   /** Required by the backend on every attendee now, regardless of `relationship` — kept
    * optional here only because this type is shared with older/partial call sites. */
   school?: string;
+  /** The school's district (see lib/booking.ts TAMIL_NADU_DISTRICTS) — UI-only convenience
+   * alongside `school`, not a field the backend has ever documented; omitted from the
+   * payload entirely when blank rather than sent as "". */
+  district?: string;
 }
 
 /**
@@ -163,6 +183,11 @@ export interface BookingCreatePayload {
   relationship: "parent" | "training_institute" | "student";
   primary_account: { name: string; email: string; phone: string };
   competitions: BookingLineInput[];
+  /** A code already checked "valid" via `POST /promo-codes/validate/` — the actual
+   * redeem/discount happens server-side inside this same create call
+   * (`redeem_promo_code`, see lib/api.ts `validatePromoCode`), so this is the one
+   * place it's ever sent. Omitted entirely when no code is applied. */
+  promo_code?: string;
 }
 
 /** One `competitions[]` entry in the booking response — a priced line for one ticket type. */
@@ -210,8 +235,80 @@ export interface BookingResponse {
 export interface PaymentOrderResponse {
   payments_session_id: string;
   amount: string;
+  currency: string;
   account_id: string;
   api_domain: string;
+}
+
+/**
+ * `POST /api/v1/payments/zohopay/mock/simulate/` request/response — dev-only
+ * (404 unless the backend has `ZOHOPAY_MOCK_MODE=True`), stands in for the
+ * real Zoho Pay checkout widget: it finishes the payment session itself and
+ * self-delivers the signed webhook, so by the time this call resolves the
+ * booking's status has already been updated server-side.
+ */
+export interface ZohoPayMockSimulatePayload {
+  payments_session_id: string;
+  outcome?: "succeeded" | "failed";
+}
+
+export interface ZohoPayMockSimulateResponse {
+  webhook_status_code: number;
+}
+
+/**
+ * `apps.analytics.models.FunnelEvent` steps, in funnel order — an
+ * append-only log (one row per occurrence, not a running total). The early
+ * steps (view/select/cart) never produce a Registration/Payment row of
+ * their own, which is the one place this frontend has to actively report
+ * something rather than the backend deriving it from other apps' models.
+ */
+export type FunnelStep = "viewed_event" | "selected_ticket" | "added_to_cart" | "entered_payment" | "paid" | "payment_failed";
+
+/**
+ * `POST /api/v1/analytics/funnel/track/` request body — `AllowAny`, fired by
+ * the frontend on every funnel step. `session_id` is a frontend-generated
+ * UUID tying one anonymous visitor's steps together (see lib/funnel.ts);
+ * the row auto-attaches `request.user` server-side once that visitor is
+ * OTP-verified/logged in, so nothing about *who* they are needs to be sent
+ * here.
+ */
+export interface FunnelTrackPayload {
+  event_id: number | string;
+  session_id: string;
+  step: FunnelStep;
+  ticket_type_id?: number | string;
+}
+
+/**
+ * `POST /api/v1/promo-codes/validate/` request — the "Apply" button's
+ * pre-check. `ticket_type_ids` is optional; sent as every distinct ticket
+ * type currently in the cart, so a code scoped to one ticket type can be
+ * rejected with the right reason before the buyer ever submits.
+ */
+export interface PromoCodeValidatePayload {
+  event_id: number | string;
+  code: string;
+  ticket_type_ids?: (number | string)[];
+}
+
+/**
+ * `POST /api/v1/promo-codes/validate/` response — always 200 whether or not
+ * the code is actually usable; `valid: false` carries a `reason` instead of
+ * an error status (see lib/api.ts `validatePromoCode`). This is a pre-check
+ * only: the discount isn't actually applied/consumed until the booking is
+ * created with `promo_code` set (`BookingCreatePayload.promo_code`).
+ */
+export interface PromoCodeValidateResponse {
+  valid: boolean;
+  discount_type?: "percentage" | "fixed" | string;
+  discount_value?: string;
+  discount_amount?: number;
+  /** Only present when `valid` is false — one of "Promo code not found.",
+   * "Promo code is no longer active.", "Promo code is not currently valid.",
+   * "Promo code usage limit reached.", "Promo code not applicable to this
+   * ticket type.", or a similar backend-supplied message. */
+  reason?: string;
 }
 
 /** `{"detail": "...", "code": "..."}` shape used for capacity/availability errors (§21). */
@@ -236,6 +333,11 @@ export interface AuthUser {
   role: string;
   account_status?: string;
   is_email_verified?: boolean;
+  /** Set once a checkout/login has actually verified a Firebase Phone Auth ID token for this
+   * account (see lib/firebase.ts, components/booking/PhoneVerifyStep.tsx) — an account created
+   * through the *email* checkout path has this false, even though `phone` may later be filled
+   * in from the booking form's own "Phone" field on step 2 (never itself verified). */
+  is_phone_verified?: boolean;
 }
 
 /** `POST /api/v1/auth/register/` request body. */
@@ -280,10 +382,55 @@ export interface VerifyEmailPayload {
 }
 
 /**
+ * `POST /api/v1/auth/otp/request/` request body — the standalone `/login`
+ * page's own OTP step, for an *existing* booking account (unlike
+ * `CheckoutOtpRequestPayload`, this never creates one). Same anti-
+ * enumeration response shape as `requestCheckoutOtp`/`requestPasswordReset`:
+ * `{ message }` either way, never revealing whether the email has an account.
+ */
+export interface LoginOtpRequestPayload {
+  email: string;
+}
+
+/** `POST /api/v1/auth/otp/login/` request body — the code from that email. */
+export interface LoginOtpVerifyPayload {
+  email: string;
+  code: string;
+}
+
+/**
+ * `POST /api/v1/auth/checkout/otp/request/` request body — checkout no
+ * longer collects a password; this sends a one-time code to `email` instead,
+ * creating a passwordless booking account on first use (`full_name` is only
+ * used for that account-creation case — an existing account keeps its own
+ * saved name).
+ */
+export interface CheckoutOtpRequestPayload {
+  email: string;
+  full_name: string;
+}
+
+/** `POST /api/v1/auth/checkout/otp/verify/` request body — the code from that email. */
+export interface CheckoutOtpVerifyPayload {
+  email: string;
+  code: string;
+}
+
+/** `POST /api/v1/auth/checkout/phone/verify/` request body — phone counterpart to
+ * `CheckoutOtpVerifyPayload`. `id_token` is what Firebase's client SDK hands back once the
+ * user completes phone sign-in (see lib/firebase.ts, components/booking/PhoneVerifyStep.tsx) —
+ * there's no separate "request" payload/endpoint the way email needs one, since Firebase (not
+ * this backend) is what actually sends the SMS. */
+export interface CheckoutPhoneVerifyPayload {
+  id_token: string;
+  full_name: string;
+}
+
+/**
  * `GET /api/v1/my-students/` — one row per distinct Student the logged-in
  * account has ever entered as an attendee (flow.pdf "The second event").
  * `name`/`date_of_birth`/`school` are the Student's permanent identity;
- * `grade`/`email`/`phone` are from that Student's most recent Attendee
+ * `grade`/`gender`/`email`/`phone` are from that Student's most recent Attendee
  * entry, since those can change booking to booking.
  */
 export interface SavedStudent {
@@ -292,6 +439,7 @@ export interface SavedStudent {
   date_of_birth: string | null;
   school: string;
   grade: string;
+  gender: string;
   email: string;
   phone: string;
 }
@@ -317,6 +465,7 @@ export interface AttendeeHistoryItem {
   name: string;
   grade: string;
   date_of_birth: string | null;
+  gender: string;
   email: string;
   phone: string;
   school: string;
@@ -344,6 +493,13 @@ export interface RegistrationHistoryItem {
   cancellation_reason: string;
   attendees: AttendeeHistoryItem[];
   created_at: string;
+  /** Present only when a promo code was actually redeemed on this registration
+   * (see lib/adminTypes.ts PromoCode, which the admin console's own registration
+   * detail already surfaces) — absent, not an empty string, when none was used. */
+  promo_code?: string | null;
+  /** The amount `promo_code` actually knocked off — decimal string from DRF,
+   * same shape as `unit_price`/`total_amount`. */
+  discount_amount?: string | null;
 }
 
 export interface PaginatedResponse<T> {
@@ -363,6 +519,7 @@ export interface CommunityHistoryItem {
   ticket_status: string;
   booking_reference: string;
   registered_at: string;
+  gender: string;
 }
 
 /** `GET /api/v1/community/me/` response. */
@@ -376,6 +533,7 @@ export interface CommunityProfileResponse {
   date_of_birth: string | null;
   school: string;
   grade: string;
+  gender: string;
   history: CommunityHistoryItem[];
 }
 
@@ -411,6 +569,19 @@ export interface GalleryItem {
   media_url: string;
 }
 
+/** "Founder Message" section content — one shared record for the whole platform, not
+ * per-event (see `founder_message` on `Event` below, and the backend's
+ * `FounderMessage.get_solo()`). An empty `message` means nothing's been filled in yet,
+ * which is how the public site decides whether to render the section at all. */
+export interface FounderMessage {
+  title?: string;
+  name?: string;
+  designation?: string;
+  message?: string;
+  /** Uploaded via the backend's Cloudflare R2 upload flow — always a full URL, never a local path. */
+  photo_url?: string | null;
+}
+
 export interface Event {
   id: number;
   title: string;
@@ -440,12 +611,20 @@ export interface Event {
    * (the hero image), uploaded to its own `event_about` R2 folder. */
   about_image_url?: string | null;
 
+  /** "Founder Message" section — a default block on every event page. One shared record
+   * across the whole platform (not per-event), embedded here by the backend so every
+   * event's page shows the same admin-edited quote/photo. See `FounderMessage` below. */
+  founder_message?: FounderMessage;
+
   highlights?: Highlight[];
   speakers?: Speaker[];
   schedule?: ScheduleDay[];
   sponsors?: Sponsor[];
   ticket_types?: TicketType[];
   gallery_items?: GalleryItem[];
+  /** "What You Get" perks — platform-wide ones (admin left the event unset) merged with any
+   * scoped to this event specifically, already ordered by the backend. See `Perk` above. */
+  perks?: Perk[];
 
   contact_email?: string;
   contact_phone?: string;

@@ -16,8 +16,6 @@ const REPORTS: { kind: ReportKind; title: string; description: string }[] = [
   { kind: "registrants", title: "Registrants report", description: "Every registration and its attendees." },
 ];
 
-/** All four exports resolve to `.xlsx` today — `?format=pdf` is accepted by the backend
- * but returns 501, so it isn't offered here. */
 export default function ReportsSection({ event, withAuth }: { event: Event; withAuth: ReturnType<typeof useAdminSession>["withAuth"] }) {
   const [downloadingKind, setDownloadingKind] = useState<ReportKind | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -13,9 +13,6 @@ import { TextField } from "@/components/ui/Field";
 import EmptyState from "@/components/ui/EmptyState";
 import { ListSkeleton } from "@/components/ui/Skeleton";
 
-/** Groups registrations into batches for scheduling/logistics (apps/batching). Excel
- * import isn't wired to a live endpoint call here beyond the file picker plumbing — the
- * multipart POST itself would need a dedicated helper; export and manual assign are live. */
 export default function BatchingSection({ event, withAuth }: { event: Event; withAuth: ReturnType<typeof useAdminSession>["withAuth"] }) {
   const [batches, setBatches] = useState<Batch[]>([]);
   const [registrations, setRegistrations] = useState<AdminRegistration[]>([]);
@@ -142,8 +139,6 @@ function CreateBatchModal({
   }
 
   function handleFilePicked(_event: ChangeEvent<HTMLInputElement>) {
-    // Excel import posts multipart to .../batches/import/ — surfaced here as a picker so the
-    // flow is discoverable; wire to a dedicated multipart helper in lib/adminApi.ts when needed.
     void _event;
   }
 

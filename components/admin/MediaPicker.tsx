@@ -10,18 +10,6 @@ import Alert from "@/components/ui/Alert";
 import EmptyState from "@/components/ui/EmptyState";
 import { ListSkeleton } from "@/components/ui/Skeleton";
 
-/**
- * "Choose from the media library" dialog — lets an admin assign media that's
- * already been uploaded (to the event's Media library) instead of uploading
- * the same file again for every place it's used. Sources from the event's
- * gallery regardless of what it's being assigned to next (the event banner,
- * a ticket type's own gallery, …), since that's the one place media gets
- * uploaded once and then reused.
- *
- * `mode="single"` (the event banner, which is one field, not a list) limits
- * the selection to one item and clicking a second replaces the first;
- * `mode="multi"` (a ticket type's gallery) behaves like a normal multi-select.
- */
 export default function MediaPickerModal({
   eventId,
   withAuth,
@@ -99,7 +87,6 @@ export default function MediaPickerModal({
                   {item.media_type === "video" ? (
                     <video src={item.media_url} className="h-full w-full object-cover" muted />
                   ) : (
-                    // eslint-disable-next-line @next/next/no-img-element -- gallery media is an R2 URL on an arbitrary host.
                     <img src={item.media_url} alt={item.caption ?? ""} className="h-full w-full object-cover" />
                   )}
                   <span

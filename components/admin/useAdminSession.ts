@@ -4,21 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 import { refreshAccessToken, type ApiResult } from "@/lib/api";
 import { clearSession, loadSession, updateTokens, type StoredSession } from "@/lib/auth";
 
-/**
- * Session plumbing shared by every admin section: loads the "admin" session
- * slot (see lib/auth.ts), and wraps a call against lib/adminApi.ts so a
- * request that comes back 401 (the 30-minute access token expired — same
- * token lifetime as the booking dashboard, see components/account/
- * BookingDashboard.tsx) transparently refreshes and retries once before
- * giving up and forcing a re-login, instead of every section reimplementing
- * that dance.
- */
 export function useAdminSession() {
   const [session, setSession] = useState<StoredSession | null | undefined>(undefined);
   const [expired, setExpired] = useState(false);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    // Reads localStorage once on mount — this can't happen in useState's initializer since that
+    // would also run during server rendering, where localStorage doesn't exist and would
+    // desync the client's first hydration render from the server's.
     setSession(loadSession("admin"));
   }, []);
 

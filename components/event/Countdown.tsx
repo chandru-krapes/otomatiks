@@ -14,25 +14,9 @@ function getTimeParts(targetMs: number) {
   };
 }
 
-/**
- * Countdown to the event start.
- *
- * The unit tiles use `tabular-nums` and a fixed width so the row can't
- * reflow as digits change — a countdown that shifts its neighbours every
- * second is the classic version of this component's layout bug.
- *
- * The four tiles share one `.glass-panel` backing instead of each carrying
- * its own — this component re-renders every second by design (it's a live
- * countdown, above the fold on every event page), and `backdrop-filter` is
- * one of the more expensive things a browser can recompute. Four
- * independent blurred surfaces ticking every second, forever, was a real,
- * constant source of the site feeling hangy; one shared surface cuts that
- * cost to a quarter without changing how it looks.
- *
- * `suppressHydrationWarning` is required on the values: the server renders
- * the remaining time at request time and the client re-renders it a moment
- * later, so a mismatch is expected rather than a bug.
- */
+// Countdown to the event start.
+
+
 export default function Countdown({ target }: { target: string }) {
   const targetMs = new Date(target).getTime();
   const [parts, setParts] = useState(() => getTimeParts(targetMs));
@@ -70,7 +54,6 @@ export default function Countdown({ target }: { target: string }) {
                 {label}
               </span>
             </div>
-            {/* Separator between tiles, omitted after the last one. */}
             {index < units.length - 1 && (
               <span className="hidden text-lg font-bold text-primary/20 sm:inline" aria-hidden="true">
                 :

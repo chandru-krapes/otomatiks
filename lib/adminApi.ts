@@ -1,5 +1,5 @@
-import { API_BASE_URL, NGROK_SKIP_HEADER, type ApiResult } from "./api";
-import type { Event, EventListResponse, GalleryItem, PaginatedResponse, Speaker, Sponsor, TicketType } from "./types";
+import { API_BASE_URL, NGROK_SKIP_HEADER, firstErrorString, type ApiResult } from "./api";
+import type { Event, EventListResponse, FounderMessage, GalleryItem, PaginatedResponse, Perk, Speaker, Sponsor, TicketType } from "./types";
 import type {
   AdminRegistration,
   AnalyticsAttendance,
@@ -11,9 +11,12 @@ import type {
   CertificateRecord,
   CertificateTaskStatus,
   CertificateTemplate,
+  CustomEmailTemplate,
   EmailLog,
   EmailTemplate,
   EmailTrigger,
+  EmailTriggerCatalogEntry,
+  FunnelStep,
   Membership,
   MembershipRole,
   MediaListResponse,
@@ -25,6 +28,7 @@ import type {
   ReportKind,
   SubUnit,
   TicketSalesRow,
+  VerificationPolicy,
 } from "./adminTypes";
 
 /**
@@ -56,11 +60,15 @@ function parseError(status: number, body: unknown): ApiResult<never> {
   if (typeof errorBody.detail === "string") {
     return { ok: false, status, message: errorBody.detail, code: errorBody.code };
   }
+  // See lib/api.ts `firstErrorString` — a "field" here can be a nested array
+  // of objects, not just an array of strings, so naively `String()`-ing an
+  // entry produces "[object Object]" instead of the actual message.
   const fieldErrors: Record<string, string[]> = {};
   for (const [field, value] of Object.entries(errorBody)) {
-    if (Array.isArray(value)) fieldErrors[field] = value.map(String);
+    if (!Array.isArray(value)) continue;
+    fieldErrors[field] = value.map((item) => (typeof item === "string" ? item : (firstErrorString(item) ?? "Invalid value.")));
   }
-  const firstMessage = Object.values(fieldErrors)[0]?.[0];
+  const firstMessage = firstErrorString(errorBody);
   return {
     ok: false,
     status,
@@ -127,7 +135,6 @@ async function requestMultipart<T>(
   try {
     parsed = await response.json();
   } catch {
-    // No/invalid JSON body.
   }
 
   if (!response.ok) return parseError(response.status, parsed);
@@ -171,7 +178,6 @@ export async function downloadAuthedFile(url: string, token: string, fallbackNam
     try {
       body = await response.json();
     } catch {
-      // no body
     }
     return parseError(response.status, body);
   }
@@ -287,6 +293,43 @@ export const updateEventMultipart = (
   aboutImageFile?: File | null,
 ) => requestMultipart<Event>("PATCH", `${V1}/events/${eventId}/`, token, eventFormData(payload, bannerFile, aboutImageFile));
 
+/* -- apps/events: founder message ------------------------------------------ */
+
+/** The shared "Founder Message" singleton (see `FounderMessage` in lib/types.ts) — one
+ * record for the whole platform, not scoped to any event, so unlike everything else in
+ * this file there's no `eventId` here: an admin's save updates the one row every event's
+ * page reads (via `PublicEventSerializer.founder_message`). */
+export interface FounderMessagePayload {
+  title?: string;
+  name?: string;
+  designation?: string;
+  message?: string;
+  /** Already-hosted photo — mutually exclusive with passing a `photoFile` to
+   * `updateFounderMessage`, which uploads it and fills this in server-side instead. */
+  photo_url?: string;
+}
+
+export const getFounderMessage = (token: string) => get<FounderMessage>(`${V1}/founder-message/`, token);
+
+export function updateFounderMessage(token: string, payload: FounderMessagePayload, photoFile?: File | null): Promise<ApiResult<FounderMessage>> {
+  if (!photoFile) return patch<FounderMessage>(`${V1}/founder-message/`, token, payload);
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(payload)) {
+    if (value !== undefined && value !== null) formData.append(key, String(value));
+  }
+  formData.append("founder_photo", photoFile);
+  return requestMultipart<FounderMessage>("PATCH", `${V1}/founder-message/`, token, formData);
+}
+
+/* -- apps/accounts: verification policy ------------------------------------ */
+
+/** The shared platform-wide `VerificationPolicy` singleton (see `VerificationPolicy` in
+ * lib/adminTypes.ts) — governs every self-signup/login/checkout flow, not scoped to any event,
+ * same "one record, no id in the URL" shape as `getFounderMessage`/`updateFounderMessage` above. */
+export const getVerificationPolicy = (token: string) => get<VerificationPolicy>(`${V1}/auth/verification-policy/`, token);
+export const updateVerificationPolicy = (token: string, payload: Partial<VerificationPolicy>) =>
+  patch<VerificationPolicy>(`${V1}/auth/verification-policy/`, token, payload);
+
 export const publishEvent = (token: string, eventId: number | string) => post<Event>(`${V1}/events/${eventId}/publish/`, token);
 export const duplicateEvent = (token: string, eventId: number | string) => post<Event>(`${V1}/events/${eventId}/duplicate/`, token);
 export const deleteEvent = (token: string, eventId: number | string) => del<null>(`${V1}/events/${eventId}/`, token);
@@ -377,6 +420,37 @@ export const updateSponsor = (token: string, eventId: number | string, sponsorId
 export const deleteSponsor = (token: string, eventId: number | string, sponsorId: number | string) =>
   del<null>(`${V1}/events/${eventId}/sponsors/${sponsorId}/`, token);
 
+/** "What You Get" perks (see `Perk` in lib/types.ts) — not nested under one event: a perk can
+ * apply platform-wide (`event: null`) or to a single event (`event: <id>`), so listing/creating
+ * always hits the flat `/perks/` collection with `event` carried in the row itself rather than
+ * the URL. `listPerks()` with no id returns every perk (global and every event's own, each
+ * tagged with its `event`) — what the admin section needs to render one combined, groupable list. */
+export const listPerks = (token: string, eventId?: number | string) =>
+  get<Perk[]>(`${V1}/perks/${eventId != null ? `?event=${eventId}` : ""}`, token);
+
+export interface PerkPayload {
+  /** `null` (or omitted on create) shows the perk on every event's page; an id scopes it to
+   * just that one event. */
+  event?: number | string | null;
+  title: string;
+  description?: string;
+  icon_url?: string | null;
+  order?: number;
+}
+
+export const createPerk = (token: string, payload: PerkPayload) => post<Perk>(`${V1}/perks/`, token, payload);
+export function createPerkMultipart(token: string, payload: PerkPayload, iconFile: File): Promise<ApiResult<Perk>> {
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(payload)) {
+    if (value !== undefined && value !== null) formData.append(key, String(value));
+  }
+  formData.append("icon", iconFile);
+  return requestMultipart("POST", `${V1}/perks/`, token, formData);
+}
+export const updatePerk = (token: string, perkId: number | string, payload: Partial<PerkPayload>) =>
+  patch<Perk>(`${V1}/perks/${perkId}/`, token, payload);
+export const deletePerk = (token: string, perkId: number | string) => del<null>(`${V1}/perks/${perkId}/`, token);
+
 /* -- apps/accounts (memberships) ------------------------------------------ */
 
 export const listMemberships = (token: string, eventId: number | string) =>
@@ -401,8 +475,12 @@ export interface TicketTypeCreatePayload {
   price: string;
   is_sponsored?: boolean;
   capacity?: number;
+  /** This ticket/category's own session time and location — separate from the parent event's
+   * own start_date/end_date/venue_name, for a multi-track event where each ticket type covers
+   * one session rather than the whole event (see `TicketType` in lib/types.ts). */
   start_time?: string;
   end_time?: string;
+  venue?: string;
   sales_start?: string;
   sales_end?: string;
   kind?: string;
@@ -591,6 +669,17 @@ export function certificateDownloadUrl(certificateId: number | string): string {
 
 /* -- apps/notifications -------------------------------------------------------*/
 
+/** Trigger catalogue — not event-scoped, so callers fetch this once and cache it (it's the same
+ * list for every event). Drives the "new template" picker and the placeholder insert-menu. */
+export const listEmailTriggers = (token: string) =>
+  get<EmailTriggerCatalogEntry[]>(`${V1}/email-triggers/`, token);
+
+/** Every trigger's current row for one event — an event override merged with the platform
+ * default, so this always has exactly one row per trigger even before the event has customized
+ * anything. Powers the settings-page table/sidebar in one call instead of one GET per trigger. */
+export const listEmailTemplates = (token: string, eventId: number | string) =>
+  get<EmailTemplate[]>(`${V1}/events/${eventId}/email-templates/`, token);
+
 export const getEmailTemplate = (token: string, eventId: number | string, trigger: EmailTrigger | string) =>
   get<EmailTemplate>(`${V1}/events/${eventId}/email-templates/${trigger}/`, token);
 
@@ -598,10 +687,46 @@ export const putEmailTemplate = (token: string, eventId: number | string, trigge
   put<EmailTemplate>(`${V1}/events/${eventId}/email-templates/${trigger}/`, token, { subject, body_html: bodyHtml });
 
 export const sendTestEmail = (token: string, eventId: number | string, trigger: EmailTrigger | string, toEmail: string) =>
-  post<{ sent: boolean }>(`${V1}/events/${eventId}/email-templates/${trigger}/send-test/`, token, { to_email: toEmail });
+  post<{ message: string }>(`${V1}/events/${eventId}/email-templates/${trigger}/send-test/`, token, { to_email: toEmail });
 
 export const listEmailLogs = (token: string, eventId: number | string, status?: string) =>
   getAllPages<EmailLog>(`${V1}/events/${eventId}/email-logs/${status ? `?status=${status}` : ""}`, token);
+
+/* -- apps/notifications: free-form custom announcements ----------------------- */
+
+/** The backend paginates this endpoint (`paginated_response`) — `getAllPages` walks every
+ * page, same as every other list endpoint here, rather than `get<T[]>` which would hand back
+ * the raw `{count, next, previous, results}` envelope in place of an array. */
+export const listCustomEmailTemplates = (token: string, eventId: number | string) =>
+  getAllPages<CustomEmailTemplate>(`${V1}/events/${eventId}/custom-email-templates/`, token);
+
+export const createCustomEmailTemplate = (token: string, eventId: number | string, name: string, subject: string, bodyHtml: string) =>
+  post<CustomEmailTemplate>(`${V1}/events/${eventId}/custom-email-templates/`, token, { name, subject, body_html: bodyHtml });
+
+export const updateCustomEmailTemplate = (
+  token: string,
+  eventId: number | string,
+  templateId: number | string,
+  patch: { name?: string; subject?: string; body_html?: string },
+) => request<CustomEmailTemplate>("PATCH", `${V1}/events/${eventId}/custom-email-templates/${templateId}/`, token, patch);
+
+export const deleteCustomEmailTemplate = (token: string, eventId: number | string, templateId: number | string) =>
+  del<null>(`${V1}/events/${eventId}/custom-email-templates/${templateId}/`, token);
+
+/** Queues one send per matching recipient — 202, not the email actually going out synchronously.
+ * `statuses` defaults server-side to confirmed + pending-payment; `cancelled` is never implied,
+ * only ever included by explicitly passing it. `extraEmails` reaches people with no registration
+ * at all (e.g. a sponsor contact). */
+export const sendCustomEmailTemplate = (
+  token: string,
+  eventId: number | string,
+  templateId: number | string,
+  options: { statuses?: string[]; extraEmails?: string[] } = {},
+) =>
+  post<{ message: string }>(`${V1}/events/${eventId}/custom-email-templates/${templateId}/send/`, token, {
+    ...(options.statuses ? { statuses: options.statuses } : {}),
+    ...(options.extraEmails?.length ? { extra_emails: options.extraEmails } : {}),
+  });
 
 /* -- apps/analytics -------------------------------------------------------*/
 
@@ -613,6 +738,9 @@ export const getAnalyticsTicketSales = (token: string, eventId: number | string)
   get<TicketSalesRow[]>(`${V1}/events/${eventId}/analytics/ticket-sales/`, token);
 export const getAnalyticsDemographics = (token: string, eventId: number | string) =>
   get<AnalyticsDemographics>(`${V1}/events/${eventId}/analytics/demographics/`, token);
+/** Checkout drop-off funnel — see `FunnelStep` in lib/adminTypes.ts for the response shape. */
+export const getAnalyticsFunnel = (token: string, eventId: number | string) =>
+  get<FunnelStep[]>(`${V1}/events/${eventId}/analytics/funnel/`, token);
 
 /* -- apps/reports -----------------------------------------------------------*/
 

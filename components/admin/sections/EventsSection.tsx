@@ -112,7 +112,6 @@ export default function EventsSection({
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-hairline bg-primary/5">
                       {event.banner_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element -- event banners are R2 URLs on an arbitrary host.
                         <img src={event.banner_url} alt="" className="h-full w-full object-cover" />
                       ) : null}
                     </div>
@@ -271,13 +270,6 @@ function PlusIcon() {
   );
 }
 
-/**
- * Create/edit event form, shared by both flows — the field set and the
- * file-vs-URL banner choice are identical, only the submit call and initial
- * values differ. `banner_image` is the event's one "primary media" slot
- * (as opposed to the many-item gallery under Media library): a file upload
- * takes priority over a pasted URL when both are given.
- */
 function EventFormModal({
   event,
   onClose,

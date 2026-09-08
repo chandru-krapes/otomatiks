@@ -6,7 +6,6 @@ function getEmbedUrl(event: Event): string | null {
   // If a map URL is provided, try to convert a standard Google Maps share link to an embed URL.
   if (event.venue_map_url) {
     const url = event.venue_map_url;
-    // Already an embed URL
     if (url.includes("google.com/maps/embed")) return url;
     // Convert short /maps/place/... link to embed
     if (url.includes("google.com/maps")) {
@@ -63,7 +62,6 @@ export default function Venue({ event }: { event: Event }) {
 
         {(hasVenue || hasContact) && (
           <div className="grid items-stretch gap-8 lg:grid-cols-2">
-            {/* ── Left: merged Venue + Contact info panel ── */}
             <div className="glass-panel flex flex-col gap-8 rounded-3xl p-8">
               {/* Venue block */}
               {hasVenue && (
@@ -117,7 +115,6 @@ export default function Venue({ event }: { event: Event }) {
                 </div>
               )}
 
-              {/* Divider */}
               {hasVenue && hasContact && <div className="h-px w-full bg-primary/10" />}
 
               {/* Contact block */}

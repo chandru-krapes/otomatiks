@@ -14,8 +14,6 @@ import { TextField } from "@/components/ui/Field";
 import EmptyState, { HandshakeIcon } from "@/components/ui/EmptyState";
 import { ListSkeleton } from "@/components/ui/Skeleton";
 
-/** Sponsor/exhibitor roster (apps/events). Logo can come from a file upload or an
- * already-hosted URL, same either/or pattern as speaker photos and the event banner. */
 export default function SponsorsSection({ event, withAuth }: { event: Event; withAuth: ReturnType<typeof useAdminSession>["withAuth"] }) {
   const [sponsors, setSponsors] = useState<Sponsor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +70,6 @@ export default function SponsorsSection({ event, withAuth }: { event: Event; wit
             <div key={sponsor.id} className="card flex items-center gap-4 rounded-2xl p-5">
               <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-hairline bg-primary/5">
                 {sponsor.logo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- sponsor logos are R2 URLs on an arbitrary host.
                   <img src={sponsor.logo_url} alt={sponsor.name} className="h-full w-full object-contain p-1.5" />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center font-boldonse text-sm uppercase text-primary">{sponsor.name.slice(0, 2)}</div>

@@ -11,23 +11,6 @@ import DatePicker from "@/components/ui/DatePicker";
 import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
 
-/**
- * A registered child's entire community account lifecycle in one screen.
- *
- * There is no email/password and no separate "create account" step — a
- * community_student account never has its own credentials. The parent or
- * institute's own confirmation email carries one `child_claim_link` per
- * booking (`/community/claim?token=<Registration.access_token>` — the same
- * token every child on that booking shares), and this page is what it
- * points at, reached here either at `/community/claim` or `/community/login`.
- *
- * `POST /api/v1/community/claim/<token>/` with just name + date of birth
- * (school as an optional tie-breaker) both creates the account on first use
- * and logs it in on every use after — matched against that specific
- * booking's attendees server-side, so no two children ever collide. Without
- * a token in the URL there's nothing to match against, so no form is shown
- * at all — just a pointer back to the email.
- */
 export default function CommunityLoginPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -78,7 +61,6 @@ export default function CommunityLoginPage() {
       maxWidth="max-w-xl"
     >
       <div className="glass-panel animate-pop-in relative flex flex-col gap-6 overflow-hidden rounded-3xl p-8 sm:p-10">
-        {/* Ambient brand glow — purely decorative, matches AccountShell's own blob treatment. */}
         <div
           className="animate-blob-slow pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-secondary/10 blur-3xl"
           aria-hidden="true"

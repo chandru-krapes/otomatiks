@@ -1,178 +1,252 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { loginAccount, registerAccount } from "@/lib/api";
-import { RELATIONSHIP_OPTIONS, type AccountMode, type Relationship } from "@/lib/booking";
+import { useRouter } from "next/navigation";
+import { requestLoginOtp, verifyLoginOtp } from "@/lib/api";
+import { maskEmail } from "@/lib/format";
 import { saveSession } from "@/lib/auth";
 import AccountShell from "./AccountShell";
-import { PasswordField, TextField } from "@/components/ui/Field";
-import { SelectField } from "@/components/ui/Select";
+import OtpInput from "@/components/booking/OtpInput";
+import { TextField, labelClass } from "@/components/ui/Field";
 import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
 
-/**
- * Standalone login/signup for booking accounts (parent/student/training
- * institute) — the same account type the booking flow itself registers
- * (components/booking/BookingForm.tsx), but reachable directly rather than
- * only mid-booking, so a returning purchaser can get to their dashboard
- * without starting a new ticket purchase first.
- */
+const RESEND_COOLDOWN_SECONDS = 30;
+
+function MailIcon() {
+  return (
+    <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="m4 7 8 6 8-6" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
 export default function BookingLoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const [mode, setMode] = useState<AccountMode>("login");
-  const [role, setRole] = useState<Relationship>("parent");
+
+  const [phase, setPhase] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [code, setCode] = useState("");
+
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const verified = searchParams.get("verified") === "1";
-  const [note, setNote] = useState<string | null>(
-    verified ? "Email verified — you can now log in." : null,
-  );
-  const [noteTone, setNoteTone] = useState<"warning" | "success">(verified ? "success" : "warning");
+  const [resentNotice, setResentNotice] = useState(false);
 
-  const isCreating = mode === "create";
+  const [cooldown, setCooldown] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  async function handleSubmit(formEvent: FormEvent) {
-    formEvent.preventDefault();
-    setError(null);
-    setNote(null);
-    setSubmitting(true);
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
 
-    if (isCreating) {
-      const registerResult = await registerAccount({ email, password, full_name: fullName, phone, role });
-      if (!registerResult.ok) {
-        setError(registerResult.message);
-        setSubmitting(false);
-        return;
-      }
-    }
-
-    const loginResult = await loginAccount({ email, password });
-    setSubmitting(false);
-    if (!loginResult.ok) {
-      if (isCreating && loginResult.code === "email_not_verified") {
-        setNote("Account created — check your email to verify it, then log in below.");
-        setNoteTone("warning");
-        setMode("login");
-        return;
-      }
-      setError(loginResult.message);
-      return;
-    }
-
-    saveSession("booking", {
-      accessToken: loginResult.data.access,
-      refreshToken: loginResult.data.refresh,
-      user: loginResult.data.user,
-    });
-    router.push("/dashboard");
+  function startCooldown() {
+    setCooldown(RESEND_COOLDOWN_SECONDS);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => {
+      setCooldown((current) => {
+        if (current <= 1) {
+          if (timerRef.current) clearInterval(timerRef.current);
+          return 0;
+        }
+        return current - 1;
+      });
+    }, 1000);
   }
+
+  async function requestCode() {
+    setError(null);
+    try {
+      const result = await requestLoginOtp({ email: email.trim() });
+      if (!result.ok) {
+        console.warn("auth/otp/request failed:", result.status, result.message);
+        setError(result.message);
+        return false;
+      }
+      setPhase("code");
+      startCooldown();
+      return true;
+    } catch (err) {
+      console.error("auth/otp/request threw unexpectedly:", err);
+      setError("Something went wrong sending the code. Please try again.");
+      return false;
+    }
+  }
+
+  async function handleSendCode(formEvent: FormEvent) {
+    formEvent.preventDefault();
+    setSending(true);
+    try {
+      await requestCode();
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleResend() {
+    setResending(true);
+    setResentNotice(false);
+    try {
+      const ok = await requestCode();
+      if (ok) {
+        setCode("");
+        setResentNotice(true);
+      }
+    } finally {
+      setResending(false);
+    }
+  }
+
+  async function verifyCode(candidate: string) {
+    setError(null);
+    setVerifying(true);
+    try {
+      const result = await verifyLoginOtp({ email: email.trim(), code: candidate });
+      if (!result.ok) {
+        console.warn("auth/otp/login failed:", result.status, result.message);
+        setError(result.message);
+        return;
+      }
+      saveSession("booking", { accessToken: result.data.access, refreshToken: result.data.refresh, user: result.data.user });
+      router.push("/dashboard");
+    } catch (err) {
+      console.error("auth/otp/login threw unexpectedly:", err);
+      setError("Something went wrong verifying the code. Please try again.");
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  function handleVerifySubmit(formEvent: FormEvent) {
+    formEvent.preventDefault();
+    if (code.length === 6) verifyCode(code);
+  }
+
+  function handleChangeEmail() {
+    setPhase("email");
+    setCode("");
+    setError(null);
+    setResentNotice(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    setCooldown(0);
+  }
+
+  const cooldownLabel = cooldown > 0 ? `Resend in 00:${String(cooldown).padStart(2, "0")}` : "Resend code";
 
   return (
     <AccountShell
       eyebrow="Booking account"
-      title={isCreating ? "Create your booking account" : "Log in to your booking account"}
+      title="Log in to your booking account"
       description="For parents, students, and training institutes booking event tickets."
     >
-      <form onSubmit={handleSubmit} className="glass-panel flex flex-col gap-6 rounded-3xl p-8">
-        <div className="flex items-center justify-between gap-4">
-          <p className="text-sm text-muted">
-            {isCreating ? "New here? Set up an account to book tickets." : "Welcome back."}
-          </p>
-          <Button
-            type="button"
-            variant="tertiary"
-            size="sm"
-            onClick={() => {
-              setMode(isCreating ? "login" : "create");
-              setError(null);
-              setNote(null);
-            }}
-            className="shrink-0 text-xs"
-          >
-            {isCreating ? "Already registered? Log in" : "New here? Create an account"}
-          </Button>
+      <div className="glass-panel relative flex flex-col items-center gap-6 overflow-hidden rounded-3xl p-8 sm:p-10">
+        <div className="tech-grid pointer-events-none absolute inset-0 opacity-40" aria-hidden="true" />
+
+        <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary/10 text-secondary">
+          <MailIcon />
         </div>
 
-        <div className="grid gap-5 sm:grid-cols-2">
-          <TextField
-            label="Email"
-            required
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="jane@email.com"
-          />
-          <PasswordField
-            label="Password"
-            required
-            minLength={8}
-            autoComplete={isCreating ? "new-password" : "current-password"}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            placeholder="At least 8 characters"
-          />
-        </div>
-
-        {!isCreating && (
-          <Link
-            href="/forgot-password?from=booking"
-            className="focus-ring -mt-3 self-end rounded-md text-xs font-semibold text-secondary hover:text-primary"
-          >
-            Forgot password?
-          </Link>
-        )}
-
-        {isCreating && (
-          <>
-            <SelectField
-              label="I am a"
-              value={role}
-              onChange={(event) => setRole(event.target.value as Relationship)}
-            >
-              {RELATIONSHIP_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </SelectField>
-            <div className="grid gap-5 sm:grid-cols-2">
-              <TextField
-                label="Full name"
-                required
-                autoComplete="name"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                placeholder="Jane Doe"
-              />
-              <TextField
-                label="Phone"
-                required
-                type="tel"
-                autoComplete="tel"
-                value={phone}
-                onChange={(event) => setPhone(event.target.value)}
-                placeholder="+91 90000 00000"
-              />
+        {phase === "email" ? (
+          <form onSubmit={handleSendCode} className="relative flex w-full flex-col gap-5">
+            <div className="text-center">
+              <h2 className="font-display text-xl font-bold text-primary">Welcome back</h2>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted">
+                No password needed — enter your email and we&rsquo;ll send you a one-time code to log in.
+              </p>
             </div>
-          </>
+
+            <TextField
+              label="Email"
+              required
+              type="email"
+              autoComplete="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="jane@email.com"
+            />
+
+            {error && (
+              <Alert tone="error" emphasize>
+                {error}
+              </Alert>
+            )}
+
+            <Button type="submit" variant="primary" size="lg" loading={sending} loadingLabel="Sending code…" className="w-full">
+              Send login code
+            </Button>
+          </form>
+        ) : (
+          <form onSubmit={handleVerifySubmit} className="relative flex w-full flex-col items-center gap-5">
+            <div className="text-center">
+              <h2 className="font-display text-xl font-bold text-primary">Enter your code</h2>
+              <p className="mt-1.5 text-sm leading-relaxed text-muted">
+                We sent a 6-digit code to <span className="font-semibold text-primary">{maskEmail(email)}</span>.
+              </p>
+            </div>
+
+            <div className="flex flex-col items-center gap-2">
+              <span className={labelClass}>Verification code</span>
+              <OtpInput value={code} onChange={setCode} onComplete={verifyCode} disabled={verifying} error={Boolean(error)} />
+            </div>
+
+            {error && (
+              <Alert tone="error" emphasize className="w-full">
+                {error}
+              </Alert>
+            )}
+            {resentNotice && !error && (
+              <Alert tone="success" className="w-full">
+                New code sent.
+              </Alert>
+            )}
+
+            <Button
+              type="submit"
+              variant="primary"
+              size="lg"
+              loading={verifying}
+              loadingLabel="Verifying…"
+              disabled={code.length < 6}
+              className="w-full"
+              icon={code.length === 6 && !verifying ? <CheckIcon /> : undefined}
+            >
+              Verify and log in
+            </Button>
+
+            <div className="flex items-center gap-4">
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={cooldown > 0 || resending}
+                className="focus-ring press rounded-md text-xs font-semibold text-secondary transition-colors hover:text-primary disabled:cursor-not-allowed disabled:text-muted"
+              >
+                {resending ? "Resending…" : cooldownLabel}
+              </button>
+              <span className="h-3 w-px bg-primary/15" aria-hidden="true" />
+              <button
+                type="button"
+                onClick={handleChangeEmail}
+                className="focus-ring press rounded-md text-xs font-semibold text-muted transition-colors hover:text-primary"
+              >
+                Change email
+              </button>
+            </div>
+          </form>
         )}
-
-        {error && <Alert tone="error" emphasize>{error}</Alert>}
-        {note && <Alert tone={noteTone}>{note}</Alert>}
-
-        <Button type="submit" variant="primary" size="lg" loading={submitting} className="w-full">
-          {isCreating ? "Create account" : "Log in"}
-        </Button>
-      </form>
+      </div>
     </AccountShell>
   );
 }

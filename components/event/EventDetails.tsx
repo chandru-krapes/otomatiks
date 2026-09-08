@@ -44,13 +44,7 @@ function Squiggle({ className }: { className?: string }) {
 
 export default function EventDetails({ event }: { event: Event }) {
   const dateRange = formatDateRange(event.start_date, event.end_date);
-  // No invented fallback: the venue line is simply omitted when the
-  // backend has no venue set, rather than naming a hotel that has nothing
-  // to do with this event.
   const venue = event.venue_name;
-  // The "Why join event" section gets its own secondary image (uploaded separately in the
-  // admin panel) so it isn't just repeating the hero banner already shown up top — falls back
-  // to the banner for events that haven't set one yet, rather than showing nothing.
   const banner = event.about_image_url || resolveBannerUrl(event);
   const cta = getRegistrationCta(event);
 
@@ -82,8 +76,6 @@ export default function EventDetails({ event }: { event: Event }) {
                   sizes="(min-width: 1024px) 512px, 100vw"
                   className="object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
                 />
-                {/* Slight bottom vignette, so the image reads as a composed
-                    plate rather than a raw upload. */}
                 <div
                   className="pointer-events-none absolute inset-0 bg-gradient-to-t from-primary/25 to-transparent"
                   aria-hidden="true"

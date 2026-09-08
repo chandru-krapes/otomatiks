@@ -6,19 +6,6 @@ import Badge from "@/components/ui/Badge";
 import { TicketIcon } from "@/components/event/TicketButton";
 import type { TicketType } from "@/lib/types";
 
-/**
- * The purchase action everywhere a ticket type is shown (ticket cards,
- * the event-categories explorer) — adds one attendee slot to the cart
- * instead of navigating to a per-ticket booking page. Every ticket type on
- * this event's page shares one cart (see CartProvider), so adding a second
- * ticket type here doesn't reset or replace the first.
- *
- * Quantity-aware: once a ticket is already in the booking, this swaps
- * itself for an in-place stepper (individual tickets) or an "Add Another
- * Team" button with a running count (team tickets) — richer feedback than
- * a plain button flashing "Added" and reverting, and it means adding a
- * second/third ticket no longer has to reopen the cart drawer to be seen.
- */
 export default function AddToCartButton({
   ticket,
   label,
@@ -32,7 +19,7 @@ export default function AddToCartButton({
   size?: ButtonSize;
   className?: string;
 }) {
-  const { lines, addTicket, addAttendeeToLine, removeAttendeeFromLine } = useCart();
+  const { lines, addTicket, addAttendeeToLine, removeAttendeeFromLine, open } = useCart();
   const isTeam = ticket.kind === "team";
 
   const addIcon = (
@@ -40,19 +27,20 @@ export default function AddToCartButton({
   );
 
   if (isTeam) {
-    // Every click starts a fresh team line (see CartProvider.addTicket), so
-    // there's no single "quantity" to step — just a running count of teams.
     const teamCount = lines.filter((line) => line.ticket.id === ticket.id).length;
     return (
-      <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-        <Button type="button" variant={variant} size={size} onClick={() => addTicket(ticket)} icon={addIcon}>
-          {teamCount > 0 ? "Add Another Team" : (label ?? "Add Team")}
-        </Button>
-        {teamCount > 0 && (
-          <Badge tone="success" className="animate-pop-in" key={teamCount}>
-            {teamCount} {teamCount === 1 ? "team" : "teams"} added
-          </Badge>
-        )}
+      <div className={`flex flex-col items-start gap-1.5 ${className}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant={variant} size={size} onClick={() => addTicket(ticket)} icon={addIcon}>
+            {teamCount > 0 ? "Add Another Team" : (label ?? "Add Team")}
+          </Button>
+          {teamCount > 0 && (
+            <Badge tone="success" className="animate-pop-in" key={teamCount}>
+              {teamCount} {teamCount === 1 ? "team" : "teams"} added
+            </Badge>
+          )}
+        </div>
+        {teamCount > 0 && <CheckoutNudge onClick={open} />}
       </div>
     );
   }
@@ -68,30 +56,47 @@ export default function AddToCartButton({
   }
 
   return (
-    <div
-      className={`inline-flex items-center gap-3 rounded-full border border-primary/15 bg-white/70 px-3 py-1.5 shadow-[var(--elev-1)] ${className}`}
-    >
-      <button
-        type="button"
-        onClick={() => removeAttendeeFromLine(line.id, line.attendees.length - 1)}
-        aria-label={`Remove one ${ticket.name}`}
-        className="focus-ring press flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35"
-      >
-        <MinusIcon />
-      </button>
-      <span key={line.attendees.length} className="animate-pop-in flex items-center gap-1.5 text-sm font-bold text-primary">
-        <CheckIcon />
-        {line.attendees.length} in your booking
-      </span>
-      <button
-        type="button"
-        onClick={() => addAttendeeToLine(line.id)}
-        aria-label={`Add another ${ticket.name}`}
-        className="focus-ring press flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35"
-      >
-        <PlusIcon />
-      </button>
+    <div className={`flex flex-col items-start gap-1.5 ${className}`}>
+      <div className="inline-flex items-center gap-3 rounded-full border border-primary/15 bg-white/70 px-3 py-1.5 shadow-[var(--elev-1)]">
+        <button
+          type="button"
+          onClick={() => removeAttendeeFromLine(line.id, line.attendees.length - 1)}
+          aria-label={`Remove one ${ticket.name}`}
+          className="focus-ring press flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35"
+        >
+          <MinusIcon />
+        </button>
+        <span key={line.attendees.length} className="animate-pop-in flex items-center gap-1.5 text-sm font-bold text-primary">
+          <CheckIcon />
+          {line.attendees.length} in your booking
+        </span>
+        <button
+          type="button"
+          onClick={() => addAttendeeToLine(line.id)}
+          aria-label={`Add another ${ticket.name}`}
+          className="focus-ring press flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35"
+        >
+          <PlusIcon />
+        </button>
+      </div>
+      <CheckoutNudge onClick={open} />
     </div>
+  );
+}
+
+// Small nudge shown under a ticket that's already in the cart for the event website
+function CheckoutNudge({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="focus-ring group animate-pop-in flex items-center gap-1 rounded-full px-1 text-xs font-semibold text-secondary transition-colors hover:text-primary"
+    >
+      Ready to pay? View cart
+      <span aria-hidden="true" className="animate-nudge-x inline-block">
+        &rarr;
+      </span>
+    </button>
   );
 }
 

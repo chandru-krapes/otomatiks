@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Baloo_2 } from "next/font/google";
 import { CartProvider } from "@/components/booking/CartProvider";
+import PwaServiceWorker from "@/components/PwaServiceWorker";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -28,6 +29,14 @@ export const metadata: Metadata = {
   // that far (an unmatched path, or an unresolvable subdomain).
   title: "Otomatiks Events",
   description: "Robotics and technology events, workshops and competitions by Otomatiks.",
+  // `app/manifest.ts` is auto-linked by Next.js (no explicit `manifest:` field needed) — this
+  // covers Android/Chrome's "Install app" prompt. iOS Safari doesn't support that manifest at
+  // all for its own "Add to Home Screen": it only ever reads `apple-touch-icon` (below) and the
+  // `appleWebApp` block. `generateMetadata` on the event page overrides `apple` with the
+  // resolved event's own logo when it has one — this generic icon only shows for the apex
+  // domain or an event with no logo uploaded yet.
+  icons: { icon: "/icons/app-icon.svg", apple: "/icons/app-icon.svg" },
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Otomatiks Events" },
 };
 
 /** Tints mobile browser chrome to the brand blue (`--primary`). */
@@ -48,6 +57,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             client-side navigation between the event page and /checkout
             without a localStorage round-trip (see CartProvider). */}
         <CartProvider>{children}</CartProvider>
+        <PwaServiceWorker />
       </body>
     </html>
   );

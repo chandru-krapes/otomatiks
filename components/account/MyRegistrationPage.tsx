@@ -11,17 +11,6 @@ import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import { ListSkeleton } from "@/components/ui/Skeleton";
 
-/**
- * `/my-registration?token=...` — a magic-link landing page for viewing one
- * booking without logging in, from the `token` carried by an emailed link
- * (see `getMyRegistration` for exactly which endpoint/shape this assumes,
- * flagged there as unverified against a dedicated backend contract).
- *
- * Deliberately not event-branded, same reasoning as `AccountShell` gives for
- * the booking/community account pages: this link can outlive or sit outside
- * any one event's subdomain, so it uses the platform's own chrome rather
- * than borrowing a look tied to whichever event happens to be current.
- */
 export default function MyRegistrationPage() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");

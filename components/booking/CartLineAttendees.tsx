@@ -1,7 +1,7 @@
 "use client";
 
 import type { SavedStudent } from "@/lib/types";
-import type { Relationship } from "@/lib/booking";
+import { copyAttendeeDetails, type Attendee, type Relationship } from "@/lib/booking";
 import type { CartLine } from "@/lib/cart";
 import { useCart } from "./CartProvider";
 import AttendeeCard from "./AttendeeCard";
@@ -24,55 +24,47 @@ function TrashIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
   );
 }
 
-/**
- * One cart line's worth of attendee cards — the checkout screen renders one
- * of these per selected ticket type (see CheckoutForm), each independently
- * capped at its own ticket's `max_team_size` for a team-kind ticket, or
- * uncapped for an individual one. Removing a line's last attendee removes
- * the whole line (an empty cart line isn't meaningful) — that's enforced in
- * CartProvider.removeAttendeeFromLine, not here.
- */
 export default function CartLineAttendees({
   line,
-  step,
+  index: lineIndex,
+  total,
   relationship,
   savedStudents,
-  onFillFromSaved,
+  previousAttendeeSuggestion,
 }: {
   line: CartLine;
-  /** Displayed step number — checkout numbers "Purchaser details" as step 1,
-   * then one step per cart line after that. */
-  step: number;
+  index: number;
+  total: number;
   relationship: Relationship;
   savedStudents: SavedStudent[];
-  onFillFromSaved: (lineId: string, attendeeIndex: number, student: SavedStudent) => void;
+
+  previousAttendeeSuggestion?: { name: string; ticketName: string; source: Attendee } | null;
 }) {
   const { updateAttendee, addAttendeeToLine, removeAttendeeFromLine, removeLine } = useCart();
   const isTeam = line.ticket.kind === "team";
   const isStudent = relationship === "student";
   const maxTeamSize = line.ticket.max_team_size ?? 3;
   const canAdd = isTeam ? line.attendees.length < maxTeamSize : true;
+  const suggestion = previousAttendeeSuggestion && !line.attendees[0]?.name ? previousAttendeeSuggestion : null;
 
   return (
     <section className="flex flex-col gap-4">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-xs font-bold text-white">
-            {step}
-          </span>
-          <div>
-            <h3 className="font-display text-lg font-bold text-primary">
-              {line.ticket.name}
-              {isTeam && <span className="ml-2 font-sans text-sm font-semibold text-muted">(Team)</span>}
-            </h3>
-            <p className="mt-0.5 text-sm leading-relaxed text-muted">
-              {isTeam
-                ? `Add up to ${maxTeamSize} members to this team.`
-                : isStudent
-                  ? "One entry per ticket — each ticket is booked for a student."
-                  : "One entry per ticket — who's actually attending."}
-            </p>
-          </div>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-secondary">
+            Ticket {lineIndex + 1} of {total}
+          </p>
+          <h3 className="mt-1 font-display text-lg font-bold text-primary">
+            {line.ticket.name}
+            {isTeam && <span className="ml-2 font-sans text-sm font-semibold text-muted">(Team)</span>}
+          </h3>
+          <p className="mt-0.5 text-sm leading-relaxed text-muted">
+            {isTeam
+              ? `Add up to ${maxTeamSize} members to this team.`
+              : isStudent
+                ? "One entry per ticket — each ticket is booked for a student."
+                : "One entry per ticket — who's actually attending."}
+          </p>
         </div>
         <div className="flex shrink-0 items-center gap-3">
           {isTeam && (
@@ -92,6 +84,22 @@ export default function CartLineAttendees({
         </div>
       </div>
 
+      {suggestion && (
+        <div className="animate-pop-in flex flex-wrap items-center justify-between gap-3 rounded-xl border border-secondary/20 bg-secondary/5 px-4 py-3">
+          <p className="text-sm text-foreground/80">
+            Same as <strong className="text-primary">{suggestion.name}</strong> from {suggestion.ticketName}?
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => updateAttendee(line.id, 0, copyAttendeeDetails(line.attendees[0], suggestion.source))}
+          >
+            Use these details
+          </Button>
+        </div>
+      )}
+
       <div className="flex flex-col gap-6">
         {line.attendees.map((attendee, index) => (
           <AttendeeCard
@@ -100,9 +108,11 @@ export default function CartLineAttendees({
             itemLabel={isTeam ? `Team Member ${index + 1}` : `${isStudent ? "Student" : "Attendee"} ${index + 1}`}
             relationship={relationship}
             savedStudents={savedStudents}
-            onChange={(next) => updateAttendee(line.id, index, next)}
-            onRemove={line.attendees.length > 1 ? () => removeAttendeeFromLine(line.id, index) : undefined}
-            onFillFromSaved={(student) => onFillFromSaved(line.id, index, student)}
+            lineId={line.id}
+            index={index}
+            canRemove={line.attendees.length > 1}
+            updateAttendee={updateAttendee}
+            removeAttendeeFromLine={removeAttendeeFromLine}
           />
         ))}
       </div>

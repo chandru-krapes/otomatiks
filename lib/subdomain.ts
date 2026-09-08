@@ -13,7 +13,6 @@ const RESERVED_SUBDOMAINS = new Set(["www", "localhost", "app", "api"]);
 export function extractSubdomain(host: string | null | undefined): string | null {
   if (!host) return null;
 
-  // Strip port (":3000") and lowercase for consistent comparisons.
   const hostname = host.split(":")[0].trim().toLowerCase();
   if (!hostname) return null;
 

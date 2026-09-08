@@ -34,49 +34,39 @@ function UserIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
-/**
- * One ticket card for every ticket kind.
- *
- * This replaces the previous `TicketCard` / `TeamTicketCard` pair, which had
- * diverged into two ~90%-identical components: the same shell, badge, price
- * row, access chips and CTA, differing only in a label, an icon and whether
- * a capacity bar was drawn. Everything that actually differs between an
- * individual and a team ticket now branches on `ticket.kind` in one place —
- * never on the ticket's name (`TicketType.Kind`, apps/tickets/models.py).
- *
- * Price, access, capacity and availability all come straight from the
- * backend response; nothing here is hard-coded per ticket.
- */
+// One ticket card for every ticket kind for the event website
 function TicketCard({ ticket, featured }: { ticket: TicketType; featured?: boolean }) {
   const soldOut = !isTicketAvailable(ticket);
   const isTeam = ticket.kind === "team";
   const maxTeamSize = ticket.max_team_size ?? 3;
 
-  /*
-   * Only drawn when the backend actually reported both numbers. The previous
-   * version defaulted to `350 / 500`, so an event that hadn't set a capacity
-   * showed an invented 70%-sold scarcity bar to every visitor.
-   */
   const sold = ticket.sold_count;
   const capacity = ticket.capacity;
   const hasCapacityData = !isTeam && sold != null && capacity != null && capacity > 0;
   const percentSold = hasCapacityData ? Math.min(100, Math.round((sold / capacity) * 100)) : 0;
   const remaining = hasCapacityData ? Math.max(0, capacity - sold) : null;
-  // "Almost gone" is a fact about the numbers, not a sales tactic.
   const scarce = remaining != null && remaining > 0 && percentSold >= 85;
+
+  const description = ticket.short_description || ticket.description;
 
   return (
     <article
-      className={`card group relative flex flex-col overflow-hidden rounded-2xl p-8 transition-all duration-[var(--dur-med)] ease-[var(--ease-out)] ${
+      // `h-full` — a team ticket's card has less content above the button (no capacity/"tickets
+      // sold" block, since that's tracked per-attendee, not per-team) than an individual
+      // ticket's does, so without an explicit full-height flex column here the team card just
+      // shrinks to its own shorter content instead of matching its row-mates, leaving its
+      // "Add Team" button sitting higher than every other card's button in the same row. The
+      // variable-length middle block below is a `flex-1 justify-center` region rather than a
+      // plain stack, so that same slack collects as breathing room *around* the description
+      // instead of one dead gap stranded right above the button.
+      className={`card group relative flex h-full flex-col items-center gap-5 overflow-hidden rounded-[1.75rem] px-7 pb-8 pt-8 text-center transition-all duration-[var(--dur-med)] ease-[var(--ease-out)] sm:px-8 ${
         soldOut
           ? "opacity-75"
           : "hover:-translate-y-2 hover:shadow-[var(--elev-3)] focus-within:-translate-y-2"
       } ${featured && !soldOut ? "ring-2 ring-secondary/30" : ""}`}
     >
-      {/* Fine blueprint texture in the corner — the engineering motif, kept
-          to a corner so it never sits behind the price. */}
       <div
-        className="tech-grid-fine pointer-events-none absolute -right-4 -top-4 h-28 w-28 opacity-40 transition-opacity duration-[var(--dur-med)] group-hover:opacity-70"
+        className="tech-grid-fine pointer-events-none absolute -right-6 -top-6 h-28 w-28 opacity-30 transition-opacity duration-[var(--dur-med)] group-hover:opacity-60"
         aria-hidden="true"
       />
 
@@ -86,82 +76,77 @@ function TicketCard({ ticket, featured }: { ticket: TicketType; featured?: boole
         </span>
       )}
 
-      <div className="relative flex flex-wrap items-center gap-2">
-        <Badge tone="brand" icon={isTeam ? <TeamIcon className="h-3.5 w-3.5" /> : <UserIcon className="h-3.5 w-3.5" />}>
-          {isTeam ? "Team Ticket" : "Individual Ticket"}
-        </Badge>
-        {soldOut && <Badge tone="neutral">Unavailable</Badge>}
-        {scarce && !soldOut && <Badge tone="warning">Almost gone</Badge>}
+      <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent via-secondary to-secondary text-white shadow-[var(--elev-2)] transition-transform duration-[var(--dur-med)] ease-[var(--ease-out)] group-hover:scale-105">
+        {isTeam ? <TeamIcon className="h-6 w-6" /> : <UserIcon className="h-6 w-6" />}
       </div>
 
-      <h3 className="relative mt-4 font-display text-2xl font-bold leading-snug text-primary">
-        {ticket.name}
-      </h3>
-      <p className="relative mt-1.5 text-sm font-semibold text-muted">
-        {isTeam ? `Up to ${maxTeamSize} team members` : "Single attendee access"}
-      </p>
+      {(soldOut || scarce) && (
+        <div className="relative -mt-1 flex flex-wrap items-center justify-center gap-2">
+          {soldOut && <Badge tone="neutral">Unavailable</Badge>}
+          {scarce && !soldOut && <Badge tone="warning">Almost gone</Badge>}
+        </div>
+      )}
 
-      <dl className="relative mt-6 flex flex-col gap-4 border-y border-primary/10 py-6 text-sm">
+      <div className="relative">
+        <p className="text-xs font-bold uppercase tracking-[0.26em] text-secondary">{ticket.name}</p>
+        <p className="mt-2 font-display text-5xl font-extrabold leading-none text-primary sm:text-6xl">
+          {formatPrice(ticket.price)}
+        </p>
+        <p className="mt-2 text-xs font-semibold uppercase tracking-wide text-muted">
+          {isTeam ? `Team ticket · up to ${maxTeamSize} members` : "Individual ticket"}
+        </p>
+      </div>
+
+      <div className="relative flex flex-1 flex-col justify-center gap-4">
+        {description && <p className="text-sm leading-relaxed text-muted">{description}</p>}
+
         {ticket.access && ticket.access.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Access includes</dt>
-            <dd className="flex flex-wrap gap-1.5">
-              {ticket.access.map((item) => (
-                <Badge key={item.id} tone="accent">
-                  {accessLabel(item.kind)}
-                </Badge>
-              ))}
-            </dd>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {ticket.access.map((item) => (
+              <Badge key={item.id} tone="accent">
+                {accessLabel(item.kind)}
+              </Badge>
+            ))}
           </div>
         )}
-        <div className="flex items-end justify-between gap-3">
-          <dt className="text-muted">{isTeam ? "Price per team" : "Price"}</dt>
-          <dd className="font-display text-3xl font-extrabold leading-none text-primary">
-            {formatPrice(ticket.price)}
-          </dd>
-        </div>
+
         {isTeam && (
           <p className="text-xs leading-relaxed text-muted">
             Charged once for the whole team, whatever the final member count.
           </p>
         )}
-      </dl>
+      </div>
 
-      {hasCapacityData && (
-        <div className="relative mt-6">
-          <div
-            className="h-1.5 w-full overflow-hidden rounded-full bg-primary/10"
-            role="progressbar"
-            aria-valuenow={percentSold}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label={`${percentSold}% of ${ticket.name} tickets sold`}
-          >
+      <div className="relative flex w-full flex-col items-center gap-4">
+        {hasCapacityData && (
+          <div className="w-full">
             <div
-              className={`h-full rounded-full transition-[width] duration-[var(--dur-slow)] ease-[var(--ease-out)] ${
-                scarce ? "bg-amber-500" : "bg-secondary"
-              }`}
-              style={{ width: `${percentSold}%` }}
-            />
-          </div>
-          <div className="mt-2 flex items-center justify-between text-xs font-semibold">
-            <span className="text-muted">Tickets sold</span>
-            <span className={scarce ? "text-amber-600" : "text-secondary"}>
+              className="h-1.5 w-full overflow-hidden rounded-full bg-primary/10"
+              role="progressbar"
+              aria-valuenow={percentSold}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={`${percentSold}% of ${ticket.name} tickets sold`}
+            >
+              <div
+                className={`h-full rounded-full transition-[width] duration-[var(--dur-slow)] ease-[var(--ease-out)] ${
+                  scarce ? "bg-amber-500" : "bg-secondary"
+                }`}
+                style={{ width: `${percentSold}%` }}
+              />
+            </div>
+            <p className={`mt-2.5 font-display text-sm font-extrabold ${scarce ? "text-amber-600" : "text-secondary"}`}>
               {soldOut ? "Sold out" : `${sold} / ${capacity}`}
-            </span>
+            </p>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* `mt-auto` pins every CTA to the bottom, so cards of differing content
-          length still line their buttons up across the row. */}
-      <div className="relative mt-auto pt-6">
         {soldOut ? (
-          <span className="inline-flex w-full items-center justify-center rounded-full border border-primary/10 bg-primary/5 px-6 py-3 text-sm font-semibold text-muted">
+          <span className="inline-flex items-center justify-center rounded-full border border-primary/10 bg-primary/5 px-6 py-3 text-sm font-semibold text-muted">
             Unavailable
           </span>
         ) : (
-          <AddToCartButton ticket={ticket} variant="primary" className="w-full" />
+          <AddToCartButton ticket={ticket} variant="secondary" />
         )}
       </div>
     </article>
@@ -169,13 +154,13 @@ function TicketCard({ ticket, featured }: { ticket: TicketType; featured?: boole
 }
 
 export default function Tickets({ event }: { event: Event }) {
-  const tickets = event.ticket_types;
+  // Paused/sold-out/closed tickets are left off the page entirely rather than shown with a
+  // disabled "Unavailable" pill — nothing purchasable here anyway.
+  const tickets = event.ticket_types?.filter(isTicketAvailable);
 
   return (
     <section id="tickets" className="relative overflow-hidden px-6 py-24 lg:px-10">
       <div className="absolute inset-0 -z-10 bg-gradient-to-br from-accent via-secondary to-secondary" />
-      {/* Blueprint overlay on the accent band, so the brightest section on the
-          page still carries the technical motif. */}
       <div
         className="pointer-events-none absolute inset-0 -z-10 opacity-[0.07]"
         style={{
@@ -215,7 +200,7 @@ export default function Tickets({ event }: { event: Event }) {
             />
           </div>
         ) : (
-          <Stagger className="mt-14 grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          <Stagger className="mt-14 grid items-stretch gap-8 sm:grid-cols-2 lg:grid-cols-3">
             {tickets.map((ticket, index) => (
               <TicketCard
                 key={ticket.id}

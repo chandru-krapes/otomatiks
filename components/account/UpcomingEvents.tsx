@@ -3,19 +3,8 @@ import { resolveBannerUrl } from "@/lib/api";
 import { formatDateRange } from "@/lib/format";
 import EmptyState from "@/components/ui/EmptyState";
 
-/**
- * Shared "upcoming events" section on both account dashboards — a
- * cross-event view (lib/api.ts listPublishedEvents), unlike the rest of
- * this site which only ever renders the one event its subdomain resolves
- * to. Each event links out to its own subdomain, since that's still where
- * the actual event website/ticket purchase lives.
- */
 export default function UpcomingEvents({ events }: { events: Event[] }) {
-  // `listPublishedEvents()` already filters to `status=published`; sorted
-  // soonest-first here rather than also filtering on end_date client-side
-  // (the backend has no date-based filter to match against, and calling
-  // `Date.now()` during render would make this impure — see React's rules
-  // on component purity).
+
   const upcoming = [...events].sort(
     (a, b) => new Date(a.start_date ?? 0).getTime() - new Date(b.start_date ?? 0).getTime(),
   );
@@ -47,8 +36,6 @@ export default function UpcomingEvents({ events }: { events: Event[] }) {
 }
 
 function EventLink({ event, banner }: { event: Event; banner: string | null }) {
-  // Local-testing subdomain scheme only (AGENTS.md "Current Local Testing")
-  // — deliberately not a hard-coded production domain.
   const href =
     typeof window !== "undefined"
       ? `${window.location.protocol}//${event.slug}.${window.location.host.replace(/^[^.]+\./, "")}`
@@ -60,7 +47,6 @@ function EventLink({ event, banner }: { event: Event; banner: string | null }) {
       className="card card-interactive focus-ring group flex items-center gap-4 rounded-2xl p-4"
     >
       {banner ? (
-        // eslint-disable-next-line @next/next/no-img-element -- cross-origin event banners, arbitrary hosts.
         <img
           src={banner}
           alt=""

@@ -10,16 +10,9 @@ import TicketButton from "./TicketButton";
 import Badge from "@/components/ui/Badge";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
 
-/** Index for the `.hero-stagger` entrance (see globals.css). */
 const step = (index: number) => ({ ["--i" as string]: index } as CSSProperties);
 
-/*
- * Hero stat circles: platform-level marketing figures, not per-event counts
- * — the same kind of static claim as About.tsx's "14+ Years of Experience" /
- * "100,000+ Students Trained", true regardless of which event site this is,
- * rather than anything derived from `event.speakers`/`event.sponsors`/etc.
- * Static, so update the numbers here if they change; nothing computes them.
- */
+// Hero stat circles for the event website
 const HERO_STATS = [
   {
     id: "participants",
@@ -36,8 +29,7 @@ const HERO_STATS = [
     float: "animate-float-slow",
   },
   {
-    // Largest of the three, and centred between the other two — the
-    // headline figure the other two flank.
+    // Largest of the three, and centred between the other two
     id: "awards",
     value: 1000,
     label: "Awards",
@@ -59,12 +51,6 @@ export default function Hero({ event }: { event: Event }) {
       <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
         {banner ? (
           <>
-            {/*
-              Static, not wrapped in <Parallax> — the scroll-driven translate
-              it applies would slide real image content past this box's
-              clipped edges, re-introducing the top/bottom cropping that was
-              fixed previously.
-            */}
             <div className="absolute inset-0 h-full w-full">
               <Image
                 src={banner}
@@ -75,25 +61,12 @@ export default function Hero({ event }: { event: Event }) {
                 className="object-cover"
               />
             </div>
-            {/*
-              Legibility scrim. The banner is an arbitrary organiser upload —
-              it can be light, busy, or have its subject exactly where the
-              headline goes. These two passes guarantee the hero copy has
-              something to sit on regardless: a horizontal wash behind the
-              text column, and a vertical one so the countdown row and the
-              section boundary below stay clean.
-            */}
             <div className="absolute inset-0 bg-gradient-to-r from-white/95 via-white/80 to-white/35 lg:via-white/70 lg:to-transparent" />
             <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-background/60" />
           </>
         ) : (
-          // No banner: a blueprint ground rather than flat white, so an event
-          // that hasn't uploaded artwork still has a designed hero.
           <div className="tech-grid absolute inset-0 opacity-70" />
         )}
-        {/* Hidden below `sm`: these run a compositor animation forever, and
-            on the very first fold every mobile visitor loads, that's a
-            permanent GPU/battery cost for a purely decorative flourish. */}
         <div className="animate-blob absolute -left-10 top-10 hidden h-64 w-64 bg-accent/15 blur-3xl sm:block" />
         <div className="animate-blob-slow absolute -right-8 bottom-0 hidden h-72 w-72 bg-secondary/10 blur-3xl sm:block" />
       </div>
@@ -104,8 +77,6 @@ export default function Hero({ event }: { event: Event }) {
             <p className="text-xs font-bold uppercase tracking-[0.28em] text-accent">
               {event.tagline || PLACEHOLDER.eyebrow}
             </p>
-            {/* Only claims "on sale" when the backend says a ticket is actually
-                purchasable — never a decorative live indicator. */}
             {event.ticket_types?.some((ticket) => ticket.is_available !== false) && (
               <Badge tone="brand" pulse>
                 Registration open
@@ -130,9 +101,6 @@ export default function Hero({ event }: { event: Event }) {
             </p>
           )}
 
-          {/* Date and venue promoted into the hero: for an event site these
-              are the two facts a visitor is looking for first, and they were
-              previously only available further down the page. */}
           {(dateRange || event.venue_name) && (
             <div
               style={step(4)}
@@ -166,18 +134,17 @@ export default function Hero({ event }: { event: Event }) {
           )}
         </div>
 
-        {/*
-          The stat circles are sized and positioned for the two-column desktop
-          layout. Below `sm` this column stacks under the hero copy instead of
-          sitting beside it, and the circles no longer have room to spread
-          out — they just pile up on each other and the section below. So they
-          aren't rendered on mobile at all.
-        */}
         <div className="relative mx-auto hidden h-[340px] w-full max-w-lg sm:block sm:h-[420px]">
           {HERO_STATS.map((stat) => (
             <div
               key={stat.id}
-              className={`absolute flex flex-col items-center justify-center rounded-full text-center text-white shadow-xl backdrop-blur-md ${stat.className} ${stat.float}`}
+              // No backdrop-blur here — animating an element while it also recomputes a
+              // backdrop-filter every frame is one of the more expensive things a browser can
+              // do, and these circles are already 85-90% opaque (see HERO_STATS' bg-*/85–90
+              // colours), so the blur was buying almost nothing visually. Three of these,
+              // always visible, always animating, in the very first viewport, were a steady
+              // contributor to the whole page feeling laggy.
+              className={`absolute flex flex-col items-center justify-center rounded-full text-center text-white shadow-xl ${stat.className} ${stat.float}`}
             >
               <span className="text-2xl font-extrabold sm:text-3xl">
                 <AnimatedNumber value={stat.value} />+
@@ -185,17 +152,13 @@ export default function Hero({ event }: { event: Event }) {
               <span className="px-3 text-[11px] font-semibold uppercase tracking-wide">{stat.label}</span>
             </div>
           ))}
-          {/* Sits in the gap between Participants and Chief Guests, above the
-              Awards circle's top edge — its old position (48%, 42%) now
-              lands inside that circle, since Awards is the new, larger one. */}
           <span className="animate-bounce-y absolute left-[52%] top-[14%] z-10 h-3 w-3 rounded-full bg-accent" />
           <span className="animate-float absolute bottom-[22%] right-[18%] z-10 h-3 w-3 rounded-full bg-secondary" />
           <span className="animate-float-slow absolute bottom-[30%] left-[6%] z-10 h-2.5 w-2.5 rounded-full bg-primary" />
         </div>
       </div>
 
-      {/* Scroll affordance — the hero is a full viewport tall, so it needs to
-          say that there is more below it. */}
+      {/* Scroll affordance for the hero */}
       <a
         href="#event-details"
         aria-label="Scroll to event details"

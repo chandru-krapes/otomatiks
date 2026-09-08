@@ -31,6 +31,8 @@ export const PLACEHOLDER = {
   roleFallback: "Content Writer",
   testimonialsEyebrow: "Testimonials",
   testimonialsTitle: "Our Clients Say",
+  perksEyebrow: "PRIZE",
+  perksTitle: "What You Get",
 } as const;
 
 export const DEFAULT_HIGHLIGHTS = [

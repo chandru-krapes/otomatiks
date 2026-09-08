@@ -7,20 +7,6 @@ import SectionHeading from "./SectionHeading";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 
-/**
- * Event agenda.
- *
- * `Event.schedule` has been part of the API shape all along (lib/types.ts
- * `ScheduleDay[]`) but nothing rendered it — this section is what surfaces
- * it. Everything here is driven by the response: days, labels, times,
- * tracks and speakers are whatever the backend sent, and the section
- * removes itself entirely when there's no schedule at all.
- *
- * Client component because the day switcher is stateful. The cost is one
- * small island; the days themselves are all present in the initial HTML,
- * hidden panels included, so the content is server-rendered and indexable
- * regardless of which tab is selected.
- */
 export default function Schedule({ event }: { event: Event }) {
   const days = event.schedule?.filter((day) => day.items && day.items.length > 0) ?? [];
   const [activeIndex, setActiveIndex] = useState(0);
@@ -30,8 +16,6 @@ export default function Schedule({ event }: { event: Event }) {
 
   return (
     <section id="schedule" className="section-tint relative overflow-hidden px-6 py-24 lg:px-10">
-      {/* Blueprint ground — the engineering motif, applied via the shared
-          token rather than anything event-specific. */}
       <div className="tech-grid pointer-events-none absolute inset-0 opacity-60" aria-hidden="true" />
 
       <div className="relative mx-auto max-w-5xl">
@@ -49,8 +33,6 @@ export default function Schedule({ event }: { event: Event }) {
           />
         ) : (
           <>
-            {/* Day tabs. Only rendered when there's more than one day —
-                a single-day event doesn't need a switcher above its list. */}
             {days.length > 1 && (
               <div
                 role="tablist"
@@ -67,8 +49,6 @@ export default function Schedule({ event }: { event: Event }) {
                       type="button"
                       aria-selected={selected}
                       aria-controls={`${tabsId}-panel-${index}`}
-                      // Roving tabindex: the tablist is one tab stop, and
-                      // arrow keys move between days.
                       tabIndex={selected ? 0 : -1}
                       onClick={() => setActiveIndex(index)}
                       onKeyDown={(keyEvent) => {
@@ -98,17 +78,9 @@ export default function Schedule({ event }: { event: Event }) {
                 role={days.length > 1 ? "tabpanel" : undefined}
                 id={`${tabsId}-panel-${index}`}
                 aria-labelledby={days.length > 1 ? `${tabsId}-tab-${index}` : undefined}
-                // `hidden` rather than unmounting: every day stays in the
-                // server-rendered HTML, and switching tabs can't reflow the
-                // page or lose scroll position.
                 hidden={index !== activeIndex}
               >
-                {/* Re-keyed on the active index so the entrance animation
-                    replays on each switch, giving the tab change a visible
-                    result without a page reload. */}
                 <ol key={activeIndex} className="relative flex flex-col gap-4">
-                  {/* Timeline spine. Sits behind the markers, and is hidden
-                      on mobile where the times stack above the cards. */}
                   <span
                     aria-hidden="true"
                     className="absolute bottom-6 left-[7.25rem] top-6 hidden w-px bg-primary/12 sm:block"
@@ -137,12 +109,8 @@ function ScheduleRow({ item, index }: { item: ScheduleItem; index: number }) {
   return (
     <li
       className="animate-pop-in group relative flex flex-col gap-3 sm:flex-row sm:gap-6"
-      // Rows cascade rather than all appearing at once. Capped so a long
-      // agenda's tail isn't left waiting.
       style={{ animationDelay: `${Math.min(index, 10) * 45}ms` }}
     >
-      {/* Time rail. Fixed width on desktop so every card starts on the same
-          vertical line regardless of how long the times are. */}
       <div className="flex shrink-0 items-center gap-3 sm:w-28 sm:flex-col sm:items-end sm:gap-0.5 sm:pt-5">
         {start ? (
           <>
@@ -154,7 +122,6 @@ function ScheduleRow({ item, index }: { item: ScheduleItem; index: number }) {
         )}
       </div>
 
-      {/* Timeline marker, aligned to the spine above. */}
       <span
         aria-hidden="true"
         className="absolute left-[6.85rem] top-[1.6rem] hidden h-3 w-3 rounded-full border-2 border-white bg-primary/30 ring-4 ring-tint-cool transition-colors duration-[var(--dur-med)] group-hover:bg-secondary sm:block"

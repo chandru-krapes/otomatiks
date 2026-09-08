@@ -5,17 +5,10 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import type { Event } from "@/lib/types";
 import type { AuthUser } from "@/lib/types";
-import { ADMIN_NAV, type AdminSectionId } from "./nav";
+import { ADMIN_NAV, ADMIN_NAV_GROUP_LABELS, withGroupHeadings, type AdminSectionId } from "./nav";
 import { AdminIcon } from "./icons";
 import { Select } from "@/components/ui/Select";
 
-/**
- * Console chrome: a dark fixed sidebar (the admin surface deliberately breaks
- * from the public site's light/blueprint look, so staff always know they're
- * in the management plane, not on the event site) plus a light content well
- * that keeps the rest of the design system — cards, hairlines, badges — so
- * every section still feels like this product.
- */
 export default function AdminShell({
   user,
   events,
@@ -40,7 +33,7 @@ export default function AdminShell({
 
   return (
     <div className="min-h-screen bg-tint-cool">
-      {/* -- Sidebar --------------------------------------------------------- */}
+      {/* -- Sidebar -- */}
       <aside
         className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col gap-6 bg-surface px-5 py-6 text-on-surface transition-transform duration-[var(--dur-med)] ease-[var(--ease-out)] lg:translate-x-0 ${
           mobileNavOpen ? "translate-x-0" : "-translate-x-full"
@@ -82,26 +75,32 @@ export default function AdminShell({
         </label>
 
         <nav className="admin-scroll-dark flex flex-1 flex-col gap-1 overflow-y-auto px-1">
-          {ADMIN_NAV.filter((item) => !item.adminOnly || user.role === "admin").map((item) => {
+          {withGroupHeadings(ADMIN_NAV.filter((item) => !item.adminOnly || user.role === "admin")).map(({ item, showHeading }) => {
             const disabled = item.needsEvent && !selectedEvent;
             const isActive = active === item.id;
             return (
-              <button
-                key={item.id}
-                type="button"
-                disabled={disabled}
-                onClick={() => {
-                  onSelectSection(item.id);
-                  setMobileNavOpen(false);
-                }}
-                title={disabled ? "Select an event first" : undefined}
-                className={`focus-ring flex items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors duration-[var(--dur-fast)] disabled:cursor-not-allowed disabled:opacity-35 ${
-                  isActive ? "bg-secondary text-white shadow-[0_6px_18px_-6px_rgba(0,0,0,0.4)]" : "text-on-surface/70 hover:bg-white/8 hover:text-on-surface"
-                }`}
-              >
-                <AdminIcon id={item.id} className="h-4 w-4 shrink-0" />
-                {item.label}
-              </button>
+              <div key={item.id} className="flex flex-col">
+                {showHeading && (
+                  <p className="px-3 pb-1 pt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-on-surface/40">
+                    {ADMIN_NAV_GROUP_LABELS[item.group!]}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => {
+                    onSelectSection(item.id);
+                    setMobileNavOpen(false);
+                  }}
+                  title={disabled ? "Select an event first" : undefined}
+                  className={`focus-ring flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-colors duration-[var(--dur-fast)] disabled:cursor-not-allowed disabled:opacity-35 ${
+                    isActive ? "bg-secondary text-white shadow-[0_6px_18px_-6px_rgba(0,0,0,0.4)]" : "text-on-surface/70 hover:bg-white/8 hover:text-on-surface"
+                  }`}
+                >
+                  <AdminIcon id={item.id} className="h-4 w-4 shrink-0" />
+                  {item.label}
+                </button>
+              </div>
             );
           })}
         </nav>
@@ -131,7 +130,7 @@ export default function AdminShell({
         <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setMobileNavOpen(false)} aria-hidden="true" />
       )}
 
-      {/* -- Content ----------------------------------------------------------- */}
+      {/* -- Content -- */}
       <div className="lg:pl-72">
         <header className="sticky top-0 z-20 flex items-center gap-4 border-b border-hairline bg-tint-cool/85 px-6 py-4 backdrop-blur-md lg:px-10">
           <button

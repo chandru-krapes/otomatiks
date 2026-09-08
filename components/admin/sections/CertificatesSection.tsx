@@ -12,11 +12,6 @@ import { SelectField } from "@/components/ui/Select";
 import EmptyState from "@/components/ui/EmptyState";
 import { ListSkeleton } from "@/components/ui/Skeleton";
 
-/**
- * Certificate templates plus the async (Celery) generation flow — kicks off
- * `POST /certificates/generate/` for every confirmed registration and polls
- * the returned task id until it settles.
- */
 export default function CertificatesSection({ event, withAuth }: { event: Event; withAuth: ReturnType<typeof useAdminSession>["withAuth"] }) {
   const [templates, setTemplates] = useState<CertificateTemplate[]>([]);
   const [registrations, setRegistrations] = useState<AdminRegistration[]>([]);

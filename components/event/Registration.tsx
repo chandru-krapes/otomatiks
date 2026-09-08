@@ -4,14 +4,7 @@ import { getRegistrationCta } from "@/lib/registration";
 import { PLACEHOLDER } from "@/lib/placeholders";
 import TicketButton from "./TicketButton";
 
-/**
- * Closing call-to-action band.
- *
- * Only rendered for events that register through an *external* URL — an
- * event with on-page ticket types already ends on the Tickets section, and
- * a second CTA pointing back up the same page would be noise (see
- * lib/registration.ts `getRegistrationCta`).
- */
+// Closing call-to-action band for the event website
 export default function Registration({ event }: { event: Event }) {
   const cta = getRegistrationCta(event);
   if (!cta || !cta.external) return null;
@@ -21,8 +14,6 @@ export default function Registration({ event }: { event: Event }) {
   return (
     <section className="px-6 py-20 lg:px-10">
       <div className="relative mx-auto max-w-5xl overflow-hidden rounded-3xl bg-gradient-to-br from-primary to-accent px-6 py-16 text-center text-white sm:px-8">
-        {/* Blueprint overlay, so the most saturated block on the page still
-            carries the engineering motif. */}
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.08]"
           style={{

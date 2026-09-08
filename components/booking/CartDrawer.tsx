@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { useCart } from "./CartProvider";
 import { computeBookingTotal, formatCurrency } from "@/lib/pricing";
 import Button from "@/components/ui/Button";
@@ -9,23 +10,15 @@ import Badge from "@/components/ui/Badge";
 import AnimatedNumber from "@/components/ui/AnimatedNumber";
 import { TicketIcon } from "@/components/event/TicketButton";
 
-/** One line's contribution to the running total — team-kind bills once per
- * line regardless of member count, same rule as the single-ticket flow. */
+// One line's contribution to the running total for the event website
 function lineTotal(price: string, attendeeCount: number, kind: string | undefined): number {
   return computeBookingTotal(Number(price) || 0, attendeeCount, kind);
 }
 
-/**
- * Floating cart affordance + slide-in panel. Mounted once inside
- * EventWebsite.tsx (the same precedent as BackToTop) — a "your ticket cart"
- * control has no place on the checkout/confirmation/account routes.
- *
- * The panel is portalled to `document.body` for the same reason Lightbox
- * is: it must render as a real viewport-fixed overlay regardless of which
- * `Reveal`-wrapped (transformed-ancestor) section it's triggered from.
- */
+// Floating cart affordance + slide-in panel for the event website
 export default function CartDrawer() {
-  const { lines, count, isOpen, open, close, removeLine, addAttendeeToLine, removeAttendeeFromLine, openCheckoutNotice } = useCart();
+  const { lines, count, isOpen, open, close, removeLine, addAttendeeToLine, removeAttendeeFromLine } = useCart();
+  const router = useRouter();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -36,9 +29,6 @@ export default function CartDrawer() {
     if (!isOpen) return;
     closeRef.current?.focus();
 
-    // Captured now, not read from the ref inside the cleanup below — by the
-    // time that runs the ref may already point at a different (or no)
-    // node, since it's a live binding to whatever's currently rendered.
     const toggleNode = toggleRef.current;
 
     const previousOverflow = document.body.style.overflow;
@@ -52,27 +42,27 @@ export default function CartDrawer() {
     return () => {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", onKeyDown);
-      // Return focus to the toggle that opened it, same courtesy as MobileNav.
       toggleNode?.focus();
     };
   }, [isOpen, close]);
 
   return (
     <>
-      <button
-        ref={toggleRef}
-        type="button"
-        onClick={() => (isOpen ? close() : open())}
-        aria-label={`Open your tickets, ${count} ${count === 1 ? "attendee" : "attendees"} selected`}
-        className="focus-ring press fixed bottom-6 right-24 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/40 transition-all duration-[var(--dur-med)] ease-[var(--ease-out)] hover:scale-110 sm:right-[5.5rem]"
-      >
-        <TicketIcon className="h-5 w-5" />
-        {count > 0 && (
-          <span className="animate-pop-in absolute -right-1 -top-1 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-secondary px-1 text-[11px] font-bold text-white">
+      {count > 0 && (
+        <button
+          ref={toggleRef}
+          type="button"
+          onClick={() => (isOpen ? close() : open())}
+          aria-label={`Proceed to pay, ${count} ${count === 1 ? "attendee" : "attendees"} selected`}
+          className="focus-ring press animate-pop-in fixed bottom-6 right-6 z-40 flex items-center gap-2.5 rounded-full bg-primary py-3 pl-4 pr-5 text-white shadow-lg shadow-primary/40 transition-all duration-[var(--dur-med)] ease-[var(--ease-out)] hover:scale-105"
+        >
+          <TicketIcon className="h-4 w-4" />
+          <span className="text-sm font-semibold">Proceed to Pay</span>
+          <span className="flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-secondary px-1 text-[11px] font-bold text-white">
             {count}
           </span>
-        )}
-      </button>
+        </button>
+      )}
 
       {isOpen &&
         createPortal(
@@ -190,7 +180,7 @@ export default function CartDrawer() {
                       type="button"
                       onClick={() => {
                         close();
-                        openCheckoutNotice();
+                        router.push("/checkout");
                       }}
                       className="sweep press mt-4 flex w-full items-center justify-center rounded-full bg-secondary px-6 py-3.5 text-sm font-semibold text-white shadow-[0_6px_20px_-4px_color-mix(in_srgb,var(--secondary)_55%,transparent)] transition-all duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:-translate-y-0.5"
                     >

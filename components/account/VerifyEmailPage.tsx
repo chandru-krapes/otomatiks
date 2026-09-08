@@ -8,14 +8,6 @@ import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 
-/**
- * Lands on `/verify-email?token=...` from the link in the verification
- * email (sent on `registerAccount()` — see BookingLoginPage's
- * `email_not_verified` handling). Fires `POST /api/v1/auth/verify-email/`
- * with the `token` on mount and, once it succeeds, forwards the same
- * `token` on to `/my-registration` — the account's booking, viewable right
- * away with no separate login step — rather than lingering here.
- */
 export default function VerifyEmailPage() {
   const router = useRouter();
   const searchParams = useSearchParams();

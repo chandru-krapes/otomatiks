@@ -1,22 +1,12 @@
 import { PLACEHOLDER } from "@/lib/placeholders";
 import Button, { type ButtonSize, type ButtonVariant } from "@/components/ui/Button";
 
-/**
- * The ticket/registration CTA — a thin preset over the shared `Button`
- * (components/ui/Button.tsx) rather than its own set of styles, so the
- * primary action on the site can never drift from the button system.
- *
- * The public props are unchanged, so every existing call site (Header,
- * MobileNav, Hero, EventDetails, Sponsors, Registration, Tickets) keeps
- * working as-is; `variant` is mapped onto the shared vocabulary below.
- */
+// The ticket/registration CTA for the event website
 type Variant = "solid" | "outline" | "light";
 
 const VARIANT_MAP: Record<Variant, ButtonVariant> = {
-  // The one action we actually want pressed.
   solid: "primary",
   outline: "secondary",
-  // Sits on a photographic/coloured ground (header bar, hero overlay).
   light: "light",
 };
 

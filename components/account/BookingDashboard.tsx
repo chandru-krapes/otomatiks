@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import type { Event, RegistrationHistoryItem, SavedStudent } from "@/lib/types";
 import { type ApiResult, getMyRegistrations, getMyStudents, listPublishedEvents, refreshAccessToken } from "@/lib/api";
 import { clearSession, loadSession, updateTokens, type StoredSession } from "@/lib/auth";
-import { formatDate, formatTime } from "@/lib/format";
+import { formatDate, formatGender, formatTime } from "@/lib/format";
 import AccountShell from "./AccountShell";
+import BookingDetailDialog from "./BookingDetailDialog";
 import UpcomingEvents from "./UpcomingEvents";
 import TestimonialManager from "./TestimonialManager";
 import Button from "@/components/ui/Button";
@@ -42,22 +43,98 @@ function formatBookingCurrency(amountStr: string | null | undefined, currencyCod
   }
 }
 
+function ChevronIcon() {
+  return (
+    <svg className="arrow-slide h-4 w-4 shrink-0 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+function RegistrationCard({ registration, onOpen }: { registration: RegistrationHistoryItem; onOpen: () => void }) {
+  const content = (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
+        <div className="flex min-w-0 flex-1 items-center gap-4 text-left">
+          <div className="h-16 w-16 sm:h-20 sm:w-20 shrink-0 overflow-hidden rounded-2xl border border-gray-100 bg-gray-50 flex items-center justify-center">
+            {registration.event_detail.banner_url ? (
+              <img
+                src={registration.event_detail.banner_url}
+                alt={registration.event_detail.title}
+                loading="lazy"
+                className="h-full w-full object-cover transition-transform duration-[var(--dur-med)] ease-[var(--ease-out)] group-hover:scale-105"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-primary/10 font-boldonse text-xl text-primary uppercase">
+                {registration.event_detail.title.slice(0, 2)}
+              </div>
+            )}
+          </div>
+          <div className="min-w-0">
+            <h3 className="truncate font-display text-base sm:text-lg font-bold text-primary leading-tight">
+              {registration.event_detail.title}
+            </h3>
+            {registration.event_detail.venue_name && (
+              <p className="mt-1 truncate text-xs text-muted sm:text-sm">
+                {registration.event_detail.venue_name}
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <span className={`whitespace-nowrap rounded-full border px-3 py-1 text-xs font-semibold ${statusClass(registration.status)}`}>
+            {STATUS_LABELS[registration.status] ?? registration.status}
+          </span>
+          <ChevronIcon />
+        </div>
+      </div>
+
+      <div className="my-5 border-t border-gray-100" />
+
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="text-left">
+          {formatTime(registration.event_detail.start_date) &&
+            formatTime(registration.event_detail.end_date) && (
+              <p className="text-xs font-semibold text-primary sm:text-sm">
+                {formatTime(registration.event_detail.start_date)} &ndash;{" "}
+                {formatTime(registration.event_detail.end_date)}
+              </p>
+            )}
+          <p className="mt-1 text-xs text-muted">
+            {formatDate(registration.event_detail.start_date, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+              year: "numeric",
+            }) ?? "Dates to be announced"}
+          </p>
+        </div>
+
+        <div className="text-right">
+          <dt className="text-[10px] font-bold uppercase tracking-wider text-muted">Total Payment</dt>
+          <dd className="mt-1 font-display text-lg sm:text-xl font-bold text-sky-500">
+            {formatBookingCurrency(registration.total_amount, registration.currency)}
+          </dd>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <button type="button" onClick={onOpen} className="card card-interactive focus-ring group block w-full rounded-3xl p-6 text-left">
+      {content}
+    </button>
+  );
+}
+
 export default function BookingDashboard() {
   const router = useRouter();
-  // `undefined` = "haven't checked storage yet" — deliberately distinct from `null` ("checked,
-  // no session"). This "use client" component still gets server-rendered for the initial HTML,
-  // where `localStorage` doesn't exist, so the very first client render (used for hydration)
-  // must produce the *same* output as the server — i.e. it can't already know the session.
-  // Reading it lazily in useState (as this used to) reads localStorage during that first
-  // client render too, before hydration reconciles, so client and server disagree and React
-  // throws them away and re-renders — the "Hydration failed" error. Populating it from a
-  // useEffect instead (which only ever runs client-side, after hydration) avoids that.
   const [session, setSession] = useState<StoredSession | null | undefined>(undefined);
   useEffect(() => {
-    // Deliberate exception to react-hooks/set-state-in-effect: this reads a browser-only API
-    // (localStorage) once, right after mount, specifically so the client's first render matches
-    // the server's (see the comment above) — there is no other way to get this value in without
-    // reintroducing the hydration mismatch this is fixing.
+    // Reads localStorage once on mount — this can't happen in useState's initializer since that
+    // would also run during server rendering, where localStorage doesn't exist and would
+    // desync the client's first hydration render from the server's.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSession(loadSession("booking"));
   }, []);
@@ -66,9 +143,10 @@ export default function BookingDashboard() {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [openRegistration, setOpenRegistration] = useState<RegistrationHistoryItem | null>(null);
 
   useEffect(() => {
-    if (session === undefined) return; // storage not checked yet (see the useEffect above)
+    if (session === undefined) return;
     if (!session) {
       router.replace("/login");
       return;
@@ -96,11 +174,6 @@ export default function BookingDashboard() {
         if (cancelled) return;
         if (refreshed.ok) {
           updateTokens("booking", session!, refreshed.data);
-          // Also push the refreshed token into React state, not just
-          // localStorage — TestimonialManager below reads `session.accessToken`
-          // directly for its own, later, independent requests (create/edit/
-          // delete a review), so it needs the current token, not whatever
-          // was in state when the page first loaded.
           setSession((current) => (current ? { ...current, accessToken: refreshed.data.access, refreshToken: refreshed.data.refresh } : current));
           return load(refreshed.data.access, refreshed.data.refresh, true);
         }
@@ -131,18 +204,6 @@ export default function BookingDashboard() {
     router.replace("/login");
   }
 
-  // Covers two different moments, both of which used to render nothing at
-  // all — a real blank white page, not a hypothetical one, since checking
-  // `localStorage` for a session happens in an effect (see the comment
-  // above `useState<StoredSession | ...>`), so it can never be known on the
-  // very first render:
-  //  1. `session === undefined` — storage hasn't been checked yet. Brief,
-  //     but real, on every single visit.
-  //  2. `session === null` — checked, there isn't one, and the redirect
-  //     effect is about to fire (it can't happen synchronously in render).
-  // Deliberately generic copy in both cases, rather than the authenticated
-  // shell below — this must never say "Welcome back" before it's confirmed
-  // there's actually a session to welcome back.
   if (!session) {
     return (
       <AccountShell eyebrow="Booking account" title="Loading your account…" maxWidth="max-w-4xl">
@@ -168,9 +229,7 @@ export default function BookingDashboard() {
     );
   }
 
-  // One review per (account, event) — a distinct list of events this
-  // account has ever registered for, deduped by id in case of multiple
-  // bookings for the same event, for the "Your reviews" section below.
+
   const reviewableEvents = Array.from(
     new Map(registrations.map((registration) => [registration.event_detail.id, registration.event_detail])).values(),
   );
@@ -181,7 +240,7 @@ export default function BookingDashboard() {
       title={`Welcome back, ${session.user.full_name || session.user.email}`}
       maxWidth="max-w-4xl"
     >
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-primary/10 pb-6">
         <p className="text-sm text-muted">
           Signed in as <span className="font-semibold text-primary">{session.user.email}</span>
         </p>
@@ -205,82 +264,8 @@ export default function BookingDashboard() {
           ) : (
             <ul className="flex flex-col gap-4">
               {registrations.map((registration) => (
-                <li key={registration.id} className="card card-interactive rounded-3xl p-6">
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4 text-left">
-                      {/* Left Image */}
-                      <div className="h-16 w-16 sm:h-20 sm:w-20 shrink-0 overflow-hidden rounded-2xl border border-gray-100 bg-gray-50 flex items-center justify-center">
-                        {registration.event_detail.banner_url ? (
-                          // eslint-disable-next-line @next/next/no-img-element -- event banners are R2 URLs on arbitrary hosts.
-                          <img
-                            src={registration.event_detail.banner_url}
-                            alt={registration.event_detail.title}
-                            loading="lazy"
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center bg-primary/10 font-boldonse text-xl text-primary uppercase">
-                            {registration.event_detail.title.slice(0, 2)}
-                          </div>
-                        )}
-                      </div>
-                      {/* Title and Subtitle */}
-                      <div>
-                        <h3 className="font-display text-base sm:text-lg font-bold text-primary leading-tight">
-                          {registration.event_detail.title}
-                        </h3>
-                        {registration.event_detail.venue_name && (
-                          <p className="mt-1 text-xs text-muted sm:text-sm">
-                            {registration.event_detail.venue_name}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Status Badge */}
-                    <span
-                      className={`shrink-0 rounded-full border px-3 py-1 text-xs font-semibold ${statusClass(registration.status)}`}
-                    >
-                      {STATUS_LABELS[registration.status] ?? registration.status}
-                    </span>
-                  </div>
-
-                  {/* Horizontal Line Divider */}
-                  <div className="my-5 border-t border-gray-100" />
-
-                  {/* Bottom Details Section */}
-                  <div className="flex flex-wrap items-end justify-between gap-4">
-                    {/* Time and Date */}
-                    <div className="text-left">
-                      {/* Only what the backend actually returned. These used to
-                          fall back to a fixed "08:00 AM - 04:00 PM" on
-                          "Friday, October 25th 2024", which showed every user
-                          invented times and dates on their own booking. */}
-                      {formatTime(registration.event_detail.start_date) &&
-                        formatTime(registration.event_detail.end_date) && (
-                          <p className="text-xs font-semibold text-primary sm:text-sm">
-                            {formatTime(registration.event_detail.start_date)} &ndash;{" "}
-                            {formatTime(registration.event_detail.end_date)}
-                          </p>
-                        )}
-                      <p className="mt-1 text-xs text-muted">
-                        {formatDate(registration.event_detail.start_date, {
-                          weekday: "long",
-                          month: "long",
-                          day: "numeric",
-                          year: "numeric",
-                        }) ?? "Dates to be announced"}
-                      </p>
-                    </div>
-
-                    {/* Total Payment Info */}
-                    <div className="text-right">
-                      <dt className="text-[10px] font-bold uppercase tracking-wider text-muted">Total Payment</dt>
-                      <dd className="mt-1 font-display text-lg sm:text-xl font-bold text-sky-500">
-                        {formatBookingCurrency(registration.total_amount, registration.currency)}
-                      </dd>
-                    </div>
-                  </div>
+                <li key={registration.id}>
+                  <RegistrationCard registration={registration} onOpen={() => setOpenRegistration(registration)} />
                 </li>
               ))}
             </ul>
@@ -297,6 +282,7 @@ export default function BookingDashboard() {
                     <span className="font-semibold text-primary">{student.name}</span>
                     {student.school ? ` — ${student.school}` : ""}
                     {student.grade ? ` (Grade ${student.grade})` : ""}
+                    {formatGender(student.gender) ? ` · ${formatGender(student.gender)}` : ""}
                   </li>
                 ))}
               </ul>
@@ -307,12 +293,6 @@ export default function BookingDashboard() {
         </div>
       </div>
 
-      {/* Full width rather than squeezed into the sidebar column above — a
-          rating picker plus a review textarea needs more breathing room
-          than a short list does. One card per distinct event the account
-          has ever registered for; each manages its own review state (see
-          TestimonialManager) since a review is scoped to one (account,
-          event) pair, independent of the others. */}
       {reviewableEvents.length > 0 && (
         <section className="flex flex-col gap-5">
           <div>
@@ -327,6 +307,10 @@ export default function BookingDashboard() {
             ))}
           </div>
         </section>
+      )}
+
+      {openRegistration && (
+        <BookingDetailDialog registration={openRegistration} onClose={() => setOpenRegistration(null)} />
       )}
     </AccountShell>
   );

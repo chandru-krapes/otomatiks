@@ -1,10 +1,11 @@
 import type { CSSProperties } from "react";
-import type { Event, Testimonial } from "@/lib/types";
+import type { Event } from "@/lib/types";
 import { buildNavLinks } from "@/lib/nav";
 import { listTestimonials } from "@/lib/api";
 import Header from "./Header";
 import Hero from "./Hero";
 import About from "./About";
+import FounderMessage from "./FounderMessage";
 import EventCategories from "./EventCategories";
 import EventDetails from "./EventDetails";
 import Gallery from "./Gallery";
@@ -12,65 +13,28 @@ import Schedule from "./Schedule";
 import Speakers from "./Speakers";
 import Sponsors from "./Sponsors";
 import Testimonials from "./Testimonials";
+import WhatYouGet from "./WhatYouGet";
 import Tickets from "./Tickets";
 import Venue from "./Venue";
 import Registration from "./Registration";
 import Footer from "./Footer";
 import Reveal from "./Reveal";
-import BackToTop from "./BackToTop";
+import FunnelViewTracker from "./FunnelViewTracker";
 import CartDrawer from "@/components/booking/CartDrawer";
-import BookingNotOpenDialog from "@/components/booking/BookingNotOpenDialog";
 
-/**
- * Section order and page rhythm.
- *
- * The sections alternate ground colour (see `.section-tint` / `.section-warm`
- * in globals.css, applied inside each section) so the page reads as a
- * sequence of bands rather than one continuous white field. Reveal variants
- * alternate direction for the same reason — a page where every section
- * arrives from below feels mechanical by the third one.
- */
-export default async function EventWebsite({
-  event,
-  testimonials: staticTestimonials,
-}: {
-  event: Event;
-  /**
-   * TEMPORARY: pass this to skip the live testimonials fetch below — used
-   * only for `STATIC_EVENT` (see `lib/resolve-event.ts`), which has no real
-   * backend id to fetch testimonials for. Every real event leaves this
-   * unset and gets the normal live fetch. Remove once `STATIC_EVENT` goes.
-   */
-  testimonials?: Testimonial[];
-}) {
-  // Not part of the resolved `Event` payload — a separate endpoint (see
-  // lib/api.ts `listTestimonials`). Fetched here (not inside
-  // Testimonials.tsx itself) so buildNavLinks can also see whether there's
-  // anything to link to.
-  const testimonials = staticTestimonials ?? (await listTestimonials(event.id));
+// Section order and page rhythm for the event website
+export default async function EventWebsite({ event }: { event: Event }) {
+
+  const testimonials = await listTestimonials(event.id);
   const navLinks = buildNavLinks(event, testimonials.length > 0);
   const style = event.theme_color ? ({ "--accent": event.theme_color } as CSSProperties) : undefined;
 
   return (
     <div style={style} className="flex min-h-screen flex-col bg-background">
+      <FunnelViewTracker eventId={event.id} />
       <Header event={event} navLinks={navLinks} />
-      {/* `id` is the skip link's target (see Header.tsx). */}
       <main id="main" className="route-transition relative flex-1 overflow-x-hidden">
-        {/*
-          Global background blobs — fixed, so they stay compositor-only and
-          never repaint on scroll. Ambient depth only, so it doesn't need
-          many of them: this used to be six, running for the entire page's
-          lifetime regardless of scroll position — six permanently-animated,
-          permanently-composited large blurred layers is real, constant GPU
-          work that adds up on anything but a high-end device, and was a
-          steady contributor to the site feeling hangy. Three covers the
-          same visual intent (top/middle/bottom of the page) at half the
-          cost, with a lighter blur radius so each one is cheaper to
-          rasterize too. Hidden below `sm` outright — a phone is the
-          device this permanently-animated cost hits hardest (weaker GPU,
-          battery-constrained), and there's no spare whitespace on that
-          layout for "ambient depth" to register in anyway.
-        */}
+      {/* Global background blobs for the event website */}
         <div className="pointer-events-none fixed inset-0 z-0 hidden overflow-hidden sm:block" aria-hidden="true">
           <div className="animate-blob-1 absolute -left-20 top-[10%] h-64 w-64 bg-accent/10 blur-xl will-change-transform" style={{ contain: "strict" }} />
           <div className="animate-blob-3 absolute left-[10%] top-[45%] h-72 w-72 bg-primary/8 blur-xl will-change-transform" style={{ contain: "strict" }} />
@@ -90,6 +54,10 @@ export default async function EventWebsite({
 
           <Reveal variant="left">
             <About />
+          </Reveal>
+
+          <Reveal variant="right">
+            <FounderMessage founderMessage={event.founder_message} />
           </Reveal>
 
           <Reveal variant="scale">
@@ -112,6 +80,10 @@ export default async function EventWebsite({
             <Testimonials testimonials={testimonials} />
           </Reveal>
 
+          <Reveal variant="scale">
+            <WhatYouGet event={event} />
+          </Reveal>
+
           <Reveal>
             <Tickets event={event} />
           </Reveal>
@@ -126,12 +98,7 @@ export default async function EventWebsite({
         </div>
       </main>
       <Footer event={event} navLinks={navLinks} />
-      <BackToTop />
-      {/* Only on the main event page — a floating "your ticket cart"
-          control has no place on /checkout (it *is* the cart) or the
-          account routes. Same precedent as BackToTop above. */}
       <CartDrawer />
-      <BookingNotOpenDialog event={event} />
     </div>
   );
 }

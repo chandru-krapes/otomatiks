@@ -107,14 +107,6 @@ export default function RegistrationsSection({ event, withAuth }: { event: Event
   );
 }
 
-/**
- * Fetches the full detail record itself (`GET /registrations/<pk>/`) rather than reusing the
- * row passed in from the list — the list endpoint's rows are thinner and don't carry
- * `primary_name`/`primary_email`/`primary_phone`, `discount_amount`, `promo_code`,
- * `cancellation_reason`, `event_detail`, or full ticket/attendee records, so a detail view
- * built straight from a list row showed blanks for all of those even though the backend had
- * the data — see `AdminRegistration` in lib/adminTypes.ts.
- */
 function RegistrationDetailModal({
   registrationId,
   onClose,

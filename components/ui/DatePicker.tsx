@@ -62,7 +62,11 @@ export default function DatePicker({
             data-invalid={error ? true : undefined}
             className="flex w-full items-center justify-between gap-2 rounded-xl border border-primary/15 bg-white px-4 py-3 text-left text-base text-foreground outline-none transition-[border-color,box-shadow,background-color] duration-[var(--dur-fast)] ease-[var(--ease-out)] hover:border-primary/30 focus:border-secondary focus:ring-4 focus:ring-secondary/12 disabled:cursor-not-allowed disabled:bg-primary/4 disabled:text-muted data-[invalid=true]:border-red-400 data-[invalid=true]:ring-4 data-[invalid=true]:ring-red-500/10 sm:text-sm"
           >
-            <span className={display ? "" : "text-muted/60"}>{display || placeholder}</span>
+            {/* `min-w-0` is load-bearing: as a flex child, this span's default min-width is
+                "auto" (its content's width), which lets it overflow past the button and wrap
+                onto a second line instead of truncating — growing this control taller than
+                every plain-text sibling in the same row (Full name/Grade/School). */}
+            <span className={`min-w-0 flex-1 truncate ${display ? "" : "text-muted/60"}`}>{display || placeholder}</span>
             <CalendarIcon className="h-4 w-4 shrink-0 text-muted" />
           </button>
         </Popover.Trigger>

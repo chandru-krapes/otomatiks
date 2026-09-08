@@ -18,9 +18,6 @@ export default function AttendanceSection({ event, withAuth }: { event: Event; w
   const [log, setLog] = useState<AttendanceLogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
-  // Bumped to re-trigger the fetch effect below after a check-in — the effect's own fetch
-  // function has to stay declared inside the effect (see OverviewSection), so it can't be
-  // called directly from the child forms below.
   const [reloadTick, setReloadTick] = useState(0);
   const reload = () => setReloadTick((tick) => tick + 1);
 

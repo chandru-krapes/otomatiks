@@ -1,24 +1,29 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
+import type { ApiResult } from "@/lib/api";
 import type { Event, GalleryItem, TicketType } from "@/lib/types";
 import {
   createPromoCode,
   createTicketGalleryFiles,
   createTicketGalleryFromUrls,
   createTicketType,
+  deletePromoCode,
   deleteTicketGalleryItem,
+  deleteTicketType,
   listPromoCodes,
   listTicketGallery,
   listTicketTypes,
   pauseTicketType,
   resumeTicketType,
   updatePromoCode,
+  updateTicketType,
   type PromoCodeCreatePayload,
   type TicketTypeCreatePayload,
 } from "@/lib/adminApi";
 import type { PromoCode } from "@/lib/adminTypes";
+import { formatDate } from "@/lib/format";
 import type { useAdminSession } from "../useAdminSession";
 import { Modal, SectionHeader, Table, Td, Thead, toLocalInput, Tr } from "../ui";
 import { AddMediaModal } from "./GallerySection";
@@ -39,9 +44,12 @@ export default function TicketsSection({ event, withAuth }: { event: Event; with
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | number | null>(null);
   const [creatingTicket, setCreatingTicket] = useState(false);
+  const [editingTicket, setEditingTicket] = useState<TicketType | null>(null);
   const [creatingPromo, setCreatingPromo] = useState(false);
   const [editingPromo, setEditingPromo] = useState<PromoCode | null>(null);
   const [managingMedia, setManagingMedia] = useState<TicketType | null>(null);
+  const [deletingTicket, setDeletingTicket] = useState<TicketType | null>(null);
+  const [deletingPromo, setDeletingPromo] = useState<PromoCode | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -82,8 +90,6 @@ export default function TicketsSection({ event, withAuth }: { event: Event; with
     setTicketTypes((current) => current.map((t) => (t.id === ticket.id ? { ...t, ...result.data } : t)));
   }
 
-  /** "Kill a code early" — a code otherwise only deactivates on its own once `valid_until`
-   * passes (a Celery beat job on the backend). */
   async function handleDeactivatePromo(promo: PromoCode) {
     setBusyId(promo.id);
     setError(null);
@@ -123,7 +129,7 @@ export default function TicketsSection({ event, withAuth }: { event: Event; with
                   </Td>
                   <Td className="whitespace-nowrap">₹{ticket.price}</Td>
                   <Td className="whitespace-nowrap">{ticket.sold_count ?? 0} / {ticket.capacity ?? "∞"}</Td>
-                  <Td>
+                  <Td className="whitespace-nowrap">
                     {ticket.is_registration_paused ? (
                       <Badge tone="warning">Paused</Badge>
                     ) : ticket.is_sold_out ? (
@@ -132,13 +138,29 @@ export default function TicketsSection({ event, withAuth }: { event: Event; with
                       <Badge tone="success">On sale</Badge>
                     )}
                   </Td>
-                  <Td>
-                    <div className="flex flex-wrap justify-end gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => setManagingMedia(ticket)}>
+                  <Td className="whitespace-nowrap">
+                    {/* Every button gets the same fixed width, "Resume" (the longest label
+                        this row ever shows) sized with room to spare — otherwise "Resume"
+                        replacing "Pause" (one word longer) widens just that row's action
+                        group, and since the group is right-aligned, every button in that row
+                        shifts left relative to every other row's, breaking the column
+                        alignment down the table. `flex-nowrap` plus the `<Td>`'s own
+                        `whitespace-nowrap` keep the four actions on one line — letting the
+                        group wrap left the last button stranded on its own row (the Table
+                        wrapper already scrolls horizontally on a narrow screen instead, see
+                        components/admin/ui.tsx). */}
+                    <div className="flex flex-nowrap items-center justify-end gap-2">
+                      <Button size="sm" variant="ghost" className="w-20" onClick={() => setEditingTicket(ticket)}>
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="ghost" className="w-20" onClick={() => setManagingMedia(ticket)}>
                         Media
                       </Button>
-                      <Button size="sm" variant="ghost" loading={busyId === ticket.id} onClick={() => handleTogglePause(ticket)}>
+                      <Button size="sm" variant="ghost" className="w-20" loading={busyId === ticket.id} onClick={() => handleTogglePause(ticket)}>
                         {ticket.is_registration_paused ? "Resume" : "Pause"}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="w-20 !text-red-600 hover:!bg-red-50" onClick={() => setDeletingTicket(ticket)}>
+                        Delete
                       </Button>
                     </div>
                   </Td>
@@ -153,7 +175,7 @@ export default function TicketsSection({ event, withAuth }: { event: Event; with
         <SectionHeader
           title="Promo codes"
           description="Discount codes scoped to this event."
-          action={<Button size="sm" variant="secondary" onClick={() => setCreatingPromo(true)}>New promo code</Button>}
+          action={<Button size="sm" onClick={() => setCreatingPromo(true)}>New promo code</Button>}
         />
 
         {promoCodes.length === 0 ? (
@@ -163,26 +185,52 @@ export default function TicketsSection({ event, withAuth }: { event: Event; with
             <Thead columns={["Code", "Discount", "Used / Max", "Valid until", "Status", ""]} />
             <tbody>
               {promoCodes.map((promo) => {
-                const isActive = promo.is_active !== false;
+                // `is_active` only flips to false once a backend Celery beat job notices
+                // `valid_until` has passed (see PromoCode's own docstring in lib/adminTypes.ts) -
+                // that job runs on its own schedule, not the instant the date rolls over, so a
+                // just-expired code can still read `is_active: true` here for a while. Checking
+                // `valid_until` directly means the admin table is never stuck showing "Active"
+                // on a code that's already unusable at checkout.
+                const isExpired = Boolean(promo.valid_until) && new Date(promo.valid_until!) < new Date();
+                const isActive = promo.is_active !== false && !isExpired;
                 return (
                   <Tr key={promo.id}>
                     <Td className="font-mono font-semibold text-primary">{promo.code}</Td>
                     <Td>{promo.discount_type === "percentage" ? `${promo.discount_value}%` : `₹${promo.discount_value}`}</Td>
                     <Td>{promo.used_count ?? 0} / {promo.max_uses ?? "∞"}</Td>
-                    <Td className="whitespace-nowrap text-xs text-muted">{promo.valid_until ? new Date(promo.valid_until).toLocaleDateString() : "—"}</Td>
+                    {/* `formatDate` (month spelled out), not the raw numeric `toLocaleDateString()`
+                        this used to call — "10/2/2026" reads as either 2 October or 10 February
+                        depending on the reader's own date-format habit, which is exactly the
+                        kind of ambiguity that made an organizer misread a still-valid code as
+                        expired months ago. */}
+                    <Td className="whitespace-nowrap text-xs text-muted">{formatDate(promo.valid_until) ?? "—"}</Td>
                     <Td>
-                      <Badge tone={isActive ? "success" : "neutral"}>{isActive ? "Active" : "Inactive"}</Badge>
+                      <Badge tone={isActive ? "success" : isExpired ? "warning" : "neutral"}>
+                        {isActive ? "Active" : isExpired ? "Expired" : "Inactive"}
+                      </Badge>
                     </Td>
-                    <Td>
-                      <div className="flex flex-wrap justify-end gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => setEditingPromo(promo)}>
+                    <Td className="whitespace-nowrap">
+                      {/* Same fixed-width-per-slot fix as the ticket-type table above — here
+                          "Deactivate" doesn't just vary in label length, it's absent entirely
+                          once a code is inactive/expired, so an empty same-width placeholder
+                          fills that slot instead of just omitting the button; otherwise Edit
+                          and Delete slide left on every row that has no Deactivate button,
+                          breaking the column alignment down the table. `flex-nowrap` plus the
+                          `<Td>`'s own `whitespace-nowrap` keep all three actions on one line. */}
+                      <div className="flex flex-nowrap items-center justify-end gap-2">
+                        <Button size="sm" variant="ghost" className="w-24" onClick={() => setEditingPromo(promo)}>
                           Edit
                         </Button>
-                        {isActive && (
-                          <Button size="sm" variant="ghost" loading={busyId === promo.id} onClick={() => handleDeactivatePromo(promo)}>
+                        {isActive ? (
+                          <Button size="sm" variant="ghost" className="w-24" loading={busyId === promo.id} onClick={() => handleDeactivatePromo(promo)}>
                             Deactivate
                           </Button>
+                        ) : (
+                          <span className="w-24" aria-hidden="true" />
                         )}
+                        <Button size="sm" variant="ghost" className="w-24 !text-red-600 hover:!bg-red-50" onClick={() => setDeletingPromo(promo)}>
+                          Delete
+                        </Button>
                       </div>
                     </Td>
                   </Tr>
@@ -194,13 +242,26 @@ export default function TicketsSection({ event, withAuth }: { event: Event; with
       </div>
 
       {creatingTicket && (
-        <CreateTicketTypeModal
+        <TicketTypeFormModal
           eventId={event.id}
           withAuth={withAuth}
           onClose={() => setCreatingTicket(false)}
-          onCreated={(ticket) => {
+          onSaved={(ticket) => {
             setTicketTypes((current) => [...current, ticket]);
             setCreatingTicket(false);
+          }}
+        />
+      )}
+
+      {editingTicket && (
+        <TicketTypeFormModal
+          eventId={event.id}
+          ticket={editingTicket}
+          withAuth={withAuth}
+          onClose={() => setEditingTicket(null)}
+          onSaved={(ticket) => {
+            setTicketTypes((current) => current.map((t) => (t.id === ticket.id ? ticket : t)));
+            setEditingTicket(null);
           }}
         />
       )}
@@ -235,12 +296,102 @@ export default function TicketsSection({ event, withAuth }: { event: Event; with
       {managingMedia && (
         <TicketMediaModal eventId={event.id} ticket={managingMedia} withAuth={withAuth} onClose={() => setManagingMedia(null)} />
       )}
+
+      {deletingTicket && (
+        <ConfirmDeleteModal
+          title="Delete ticket type"
+          confirmLabel="Delete ticket type"
+          message={
+            <>
+              This permanently deletes <span className="font-semibold">{deletingTicket.name}</span>. This cannot be undone.
+            </>
+          }
+          onConfirm={() => withAuth((token) => deleteTicketType(token, event.id, deletingTicket.id))}
+          onDeleted={() => {
+            setTicketTypes((current) => current.filter((t) => t.id !== deletingTicket.id));
+            setDeletingTicket(null);
+          }}
+          onClose={() => setDeletingTicket(null)}
+        />
+      )}
+
+      {deletingPromo && (
+        <ConfirmDeleteModal
+          title="Delete promo code"
+          confirmLabel="Delete promo code"
+          message={
+            <>
+              This permanently deletes <span className="font-mono font-semibold">{deletingPromo.code}</span>. This cannot be undone.
+            </>
+          }
+          onConfirm={() => withAuth((token) => deletePromoCode(token, event.id, deletingPromo.id))}
+          onDeleted={() => {
+            setPromoCodes((current) => current.filter((p) => p.id !== deletingPromo.id));
+            setDeletingPromo(null);
+          }}
+          onClose={() => setDeletingPromo(null)}
+        />
+      )}
     </div>
   );
 }
 
-/** Media library scoped to one ticket type — same file/URL/bulk semantics as the event-wide
- * Media library section, reusing its `AddMediaModal` against the ticket-gallery endpoints. */
+function ConfirmDeleteModal({
+  title,
+  message,
+  confirmLabel = "Delete",
+  errorFor500,
+  onClose,
+  onConfirm,
+  onDeleted,
+}: {
+  title: string;
+  message: ReactNode;
+  confirmLabel?: string;
+  errorFor500?: string;
+  onClose: () => void;
+  onConfirm: () => Promise<ApiResult<null>>;
+  onDeleted: () => void;
+}) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleConfirm() {
+    setSubmitting(true);
+    setError(null);
+    const result = await onConfirm();
+    setSubmitting(false);
+    if (!result.ok) {
+      setError(errorFor500 && result.status === 500 ? errorFor500 : result.message);
+      return;
+    }
+    onDeleted();
+  }
+
+  return (
+    <Modal title={title} onClose={onClose}>
+      <div className="flex flex-col gap-4">
+        <Alert tone="error">{message}</Alert>
+        {error && <Alert tone="error" emphasize>{error}</Alert>}
+        <div className="flex justify-end gap-2">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="primary"
+            loading={submitting}
+            onClick={handleConfirm}
+            className="!bg-red-600 !shadow-none hover:!bg-red-700"
+          >
+            {confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function TicketMediaModal({
   eventId,
   ticket,
@@ -284,8 +435,6 @@ function TicketMediaModal({
     else setError(result.message);
   }
 
-  /** Re-attaches media already sitting in the event's Media library — a URL-only write, since
-   * the file (if any) is already hosted; no re-upload needed. */
   async function handleAttachExisting(selected: GalleryItem[]) {
     setPicking(false);
     if (selected.length === 0) return;
@@ -325,7 +474,6 @@ function TicketMediaModal({
                 {item.media_type === "video" ? (
                   <video src={item.media_url} className="h-full w-full object-cover" muted />
                 ) : (
-                  // eslint-disable-next-line @next/next/no-img-element -- ticket media is an R2 URL on an arbitrary host.
                   <img src={item.media_url} alt={item.caption ?? ""} className="h-full w-full object-cover" />
                 )}
                 <button
@@ -372,24 +520,37 @@ function TicketMediaModal({
   );
 }
 
-function CreateTicketTypeModal({
+/** Create/edit are the same form (mirrors PromoCodeFormModal's own create/edit split below) —
+ * an optional `ticket` prefills every field from the existing row and switches the submit to a
+ * PATCH instead of a POST. */
+function TicketTypeFormModal({
   eventId,
+  ticket,
   onClose,
-  onCreated,
+  onSaved,
   withAuth,
 }: {
   eventId: number | string;
+  ticket?: TicketType;
   onClose: () => void;
-  onCreated: (ticket: TicketType) => void;
+  onSaved: (ticket: TicketType) => void;
   withAuth: ReturnType<typeof useAdminSession>["withAuth"];
 }) {
-  const [name, setName] = useState("");
-  const [shortDescription, setShortDescription] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("");
-  const [capacity, setCapacity] = useState("");
-  const [kind, setKind] = useState<"individual" | "team">("individual");
-  const [maxTeamSize, setMaxTeamSize] = useState("");
+  const isEditing = Boolean(ticket);
+
+  const [name, setName] = useState(ticket?.name ?? "");
+  const [shortDescription, setShortDescription] = useState(ticket?.short_description ?? "");
+  const [description, setDescription] = useState(ticket?.description ?? "");
+  const [price, setPrice] = useState(ticket?.price ?? "");
+  const [capacity, setCapacity] = useState(ticket?.capacity != null ? String(ticket.capacity) : "");
+  const [kind, setKind] = useState<"individual" | "team">(ticket?.kind === "team" ? "team" : "individual");
+  const [maxTeamSize, setMaxTeamSize] = useState(ticket?.max_team_size != null ? String(ticket.max_team_size) : "");
+  // This session's own place/time — separate from the parent event's venue/dates (see
+  // TicketTypeCreatePayload's own comment in lib/adminApi.ts). Previously not editable at all
+  // once a ticket type was created, so a rescheduled session had nowhere to reflect that.
+  const [venue, setVenue] = useState(ticket?.venue ?? "");
+  const [startTime, setStartTime] = useState(() => toLocalInput(ticket?.start_time));
+  const [endTime, setEndTime] = useState(() => toLocalInput(ticket?.end_time));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -405,18 +566,23 @@ function CreateTicketTypeModal({
       kind,
       capacity: capacity ? Number(capacity) : undefined,
       max_team_size: kind === "team" && maxTeamSize ? Number(maxTeamSize) : undefined,
+      venue: venue || undefined,
+      start_time: startTime ? new Date(startTime).toISOString() : undefined,
+      end_time: endTime ? new Date(endTime).toISOString() : undefined,
     };
-    const result = await withAuth((token) => createTicketType(token, eventId, payload));
+    const result = ticket
+      ? await withAuth((token) => updateTicketType(token, eventId, ticket.id, payload))
+      : await withAuth((token) => createTicketType(token, eventId, payload));
     setSubmitting(false);
     if (!result.ok) {
       setError(result.message);
       return;
     }
-    onCreated(result.data);
+    onSaved(result.data);
   }
 
   return (
-    <Modal title="New ticket type" onClose={onClose} maxWidth="max-w-xl">
+    <Modal title={isEditing ? `Edit “${ticket!.name}”` : "New ticket type"} onClose={onClose} maxWidth="max-w-xl">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <TextField label="Name" required value={name} onChange={(event) => setName(event.target.value)} placeholder="Standard Pass" />
         <TextField
@@ -437,6 +603,22 @@ function CreateTicketTypeModal({
           <TextField label="Price (₹)" required inputMode="decimal" value={price} onChange={(event) => setPrice(event.target.value)} placeholder="499.00" />
           <TextField label="Capacity" type="number" value={capacity} onChange={(event) => setCapacity(event.target.value)} placeholder="500" />
         </div>
+        <TextField
+          label="Venue"
+          value={venue}
+          onChange={(event) => setVenue(event.target.value)}
+          placeholder="Main Auditorium"
+          hint="This session's own location — leave blank to use the event's main venue."
+        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <DateTimePicker
+            label="Starts at"
+            value={startTime}
+            onChange={setStartTime}
+            hint="This session's own schedule — reschedule it here if it moves."
+          />
+          <DateTimePicker label="Ends at" value={endTime} onChange={setEndTime} />
+        </div>
         <SelectField label="Kind" value={kind} onChange={(event) => setKind(event.target.value as "individual" | "team")}>
           <option value="individual">Individual</option>
           <option value="team">Team</option>
@@ -446,17 +628,13 @@ function CreateTicketTypeModal({
         )}
         {error && <Alert tone="error" emphasize>{error}</Alert>}
         <Button type="submit" variant="primary" loading={submitting} className="w-full">
-          Create ticket type
+          {isEditing ? "Save changes" : "Create ticket type"}
         </Button>
       </form>
     </Modal>
   );
 }
 
-/** Replaces a promo code by id if present, otherwise appends it — shared by both create and
- * edit's `onSaved`, since editing an existing code (found via the duplicate-code prompt below,
- * or from the table's own "Edit" button) resolves to the same "update this row" outcome as a
- * fresh create resolves to "add a row". */
 function upsertPromoCode(current: PromoCode[], promo: PromoCode): PromoCode[] {
   const exists = current.some((p) => p.id === promo.id);
   return exists ? current.map((p) => (p.id === promo.id ? promo : p)) : [...current, promo];
@@ -466,17 +644,6 @@ function codesMatch(a: string, b: string): boolean {
   return a.trim().toUpperCase() === b.trim().toUpperCase();
 }
 
-/**
- * Create/edit promo code, shared by both flows (same pattern as EventsSection's
- * `EventFormModal`) — only the submit call and initial values differ.
- *
- * Also the fix for a duplicate-code create: codes are unique per event, and a create with a
- * code that already exists on this event fails with a 400 whose message doesn't say *which*
- * code collided or offer any next step. Since the full list of this event's codes is already
- * loaded (`existingCodes`), a live client-side check catches the collision before submit and
- * offers to switch straight into editing that existing code instead — and the same check runs
- * against the server's error message as a fallback, in case the in-memory list is stale.
- */
 function PromoCodeFormModal({
   eventId,
   promo,
@@ -492,9 +659,6 @@ function PromoCodeFormModal({
   onSaved: (promo: PromoCode) => void;
   withAuth: ReturnType<typeof useAdminSession>["withAuth"];
 }) {
-  // Which existing promo code this form is editing — starts as the `promo` prop (the table's
-  // own "Edit" button), but can also become set mid-create, when the duplicate-code prompt
-  // below is accepted.
   const [editingPromo, setEditingPromo] = useState<PromoCode | null>(promo ?? null);
   const isEditing = Boolean(editingPromo);
 
@@ -502,16 +666,11 @@ function PromoCodeFormModal({
   const [discountType, setDiscountType] = useState<"percentage" | "flat">((promo?.discount_type as "percentage" | "flat") ?? "percentage");
   const [discountValue, setDiscountValue] = useState(promo?.discount_value ?? "");
   const [maxUses, setMaxUses] = useState(promo?.max_uses != null ? String(promo.max_uses) : "");
-  // Defaults to "now" on create — the backend requires `valid_from` (see the reference doc's
-  // request body), and a code almost always starts working immediately, so this saves picking
-  // it by hand every time while still being editable for a scheduled/future-dated code.
   const [validFrom, setValidFrom] = useState(() => toLocalInput(promo?.valid_from ?? new Date().toISOString()));
   const [validUntil, setValidUntil] = useState(() => toLocalInput(promo?.valid_until));
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Any other code on this event (excluding whichever one is currently being edited, if any)
-  // that matches what's typed right now.
   const duplicate = existingCodes.find((p) => p.id !== editingPromo?.id && code.trim() && codesMatch(p.code, code));
 
   function switchToEditingDuplicate(target: PromoCode) {
@@ -527,7 +686,7 @@ function PromoCodeFormModal({
 
   async function handleSubmit(formEvent: FormEvent) {
     formEvent.preventDefault();
-    if (duplicate) return; // the inline prompt below is the only way past this — no silent submit into a 400.
+    if (duplicate) return;
     setSubmitting(true);
     setError(null);
     const payload: PromoCodeCreatePayload = {
@@ -543,8 +702,6 @@ function PromoCodeFormModal({
       : await withAuth((token) => createPromoCode(token, eventId, payload));
     setSubmitting(false);
     if (!result.ok) {
-      // Fallback for a collision the in-memory `existingCodes` list didn't catch (stale data,
-      // or a code created from another tab/session in the meantime).
       const serverSideDuplicate =
         !editingPromo && /already exists/i.test(result.message) ? existingCodes.find((p) => codesMatch(p.code, code)) : undefined;
       if (serverSideDuplicate) {

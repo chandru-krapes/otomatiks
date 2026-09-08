@@ -13,9 +13,6 @@ import { TextareaField, TextField } from "@/components/ui/Field";
 import EmptyState, { PeopleIcon } from "@/components/ui/EmptyState";
 import { ListSkeleton } from "@/components/ui/Skeleton";
 
-/** Speaker roster (apps/events) — staff-only list; speakers surface publicly through the
- * event's own nested serializer rather than this endpoint. Photo can come from a file upload
- * or an already-hosted URL, same either/or pattern as sponsor logos and the event banner. */
 export default function SpeakersSection({ event, withAuth }: { event: Event; withAuth: ReturnType<typeof useAdminSession>["withAuth"] }) {
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +69,6 @@ export default function SpeakersSection({ event, withAuth }: { event: Event; wit
             <div key={speaker.id} className="card flex items-start gap-4 rounded-2xl p-5">
               <div className="h-14 w-14 shrink-0 overflow-hidden rounded-full border border-hairline bg-primary/5">
                 {speaker.photo_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- speaker photos are R2 URLs on an arbitrary host.
                   <img src={speaker.photo_url} alt={speaker.name} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full w-full items-center justify-center font-boldonse text-sm uppercase text-primary">{speaker.name.slice(0, 2)}</div>

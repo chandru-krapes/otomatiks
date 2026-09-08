@@ -15,26 +15,12 @@ function initials(name: string) {
     .toUpperCase();
 }
 
-/**
- * Speaker card.
- *
- * Everything rendered is a field the backend actually returned. The previous
- * version filled the gaps with invented content — a "GOLD" badge hard-coded
- * onto whichever speaker happened to be third in the list, "Fire Epic Ltd."
- * as everyone's organisation, "Founder & CEO" whenever `designation` was
- * missing, and four dead `#` social links per card. On a page shown to
- * sponsors and parents, those read as real claims, so they're gone; a
- * speaker with only a name now simply shows a name.
- *
- * The bio is revealed on hover/focus on pointer devices, but is always
- * visible on touch layouts — hover-only content is unreachable on a phone.
- */
+// Speaker card for the event website
 function SpeakerCard({ speaker }: { speaker: Speaker }) {
   const photo = speaker.photo_url;
 
   return (
     <article className="card card-interactive group relative flex h-full flex-col items-center overflow-hidden rounded-2xl px-3 pb-5 pt-6 text-center sm:px-6 sm:pb-8 sm:pt-10">
-      {/* Halo behind the portrait, brightening on hover. */}
       <div
         className="pointer-events-none absolute -top-8 left-1/2 h-32 w-32 -translate-x-1/2 rounded-full bg-secondary/10 blur-2xl transition-opacity duration-[var(--dur-med)] group-hover:opacity-100 sm:opacity-60"
         aria-hidden="true"
@@ -71,8 +57,6 @@ function SpeakerCard({ speaker }: { speaker: Speaker }) {
         <p
           className={
             "relative mt-3 w-full border-t border-primary/8 pt-3 text-[11px] leading-relaxed text-muted sm:mt-5 sm:pt-4 sm:text-xs " +
-            // Always readable where there is no hover; revealed on hover or
-            // keyboard focus on pointer devices.
             "line-clamp-3 transition-opacity duration-[var(--dur-med)] " +
             "[@media(hover:hover)]:opacity-70 [@media(hover:hover)]:group-hover:opacity-100 " +
             "[@media(hover:hover)]:group-focus-within:opacity-100"

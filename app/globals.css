@@ -394,6 +394,47 @@ section[id] {
 }
 
 /*
+ * Physical-ticket stub: the two semicircular notches punched where a real
+ * ticket would tear, plus the dashed tear line across the divider that
+ * carries this class. The notch colour is hardcoded white rather than a
+ * token — it's cutting a hole through BookingConfirmationView's ticket
+ * card specifically, which is a plain white surface by design (unlike
+ * `.glass-panel`, an opaque card reads more like an actual paper ticket,
+ * with no blur artifact for the punched circle to look wrong against).
+ */
+.ticket-notch {
+  position: relative;
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--hairline-strong) 0,
+    var(--hairline-strong) 10px,
+    transparent 10px,
+    transparent 18px
+  );
+  background-position: center;
+  background-size: 100% 2px;
+  background-repeat: no-repeat;
+}
+.ticket-notch::before,
+.ticket-notch::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 1.75rem;
+  height: 1.75rem;
+  background: white;
+  border-radius: 9999px;
+  transform: translateY(-50%);
+  z-index: 1;
+}
+.ticket-notch::before {
+  left: -0.875rem;
+}
+.ticket-notch::after {
+  right: -0.875rem;
+}
+
+/*
  * Corner registration marks, like the crop marks on a technical drawing.
  * Two thin rules meeting at a corner; pure CSS, no extra DOM.
  */
@@ -663,6 +704,34 @@ section[id] {
   animation: pop-in var(--dur-med) var(--ease-spring);
 }
 
+/* Mobile order-review bottom sheet (MobileOrderSheet) sliding up off the
+   viewport edge — distinct from `pop-in`'s small scale/fade, since a sheet
+   anchored to the bottom of the screen reads as sliding into place, not
+   fading in where it already sits. */
+@keyframes sheet-up {
+  from {
+    transform: translate3d(0, 100%, 0);
+  }
+  to {
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.animate-sheet-up {
+  animation: sheet-up var(--dur-med) var(--ease-out);
+}
+
+/* Checkout nudge arrow — a gentle, indefinite hint to look toward the
+   floating "Proceed to Pay" button, not a one-shot entrance. */
+@keyframes nudge-x {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(3px, 0, 0); }
+}
+
+.animate-nudge-x {
+  animation: nudge-x 1.1s var(--ease-in-out) infinite;
+}
+
 /* Validation errors: one short shake, never a loop. */
 @keyframes shake-x {
   0%, 100% { transform: translate3d(0, 0, 0); }
@@ -892,6 +961,8 @@ section[id] {
   .animate-pop-in,
   .animate-shake,
   .animate-scan,
+  .animate-nudge-x,
+  .animate-sheet-up,
   /* Tailwind's own looping utility, used for the live-status dot on Badge.
      Not ours, but it runs forever, so it belongs in this list too. */
   .animate-ping,

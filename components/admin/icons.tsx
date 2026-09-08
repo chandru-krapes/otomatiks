@@ -1,10 +1,11 @@
 import type { AdminSectionId } from "./nav";
 
-/** One small line-icon per nav item — kept in a single lookup so AdminShell's sidebar stays
- * a plain map over ADMIN_NAV rather than a long JSX switch. */
 const PATHS: Record<AdminSectionId, string> = {
   overview: "M4 19V5m6 14V9m6 10V13m6 6V3",
   events: "M4 5h16M4 5v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1V5M8 3v4M16 3v4M4 10h16",
+  "founder-message": "M7 8a5 5 0 0 1 5-5c1 2 1 3.2 0 5-1.5 0-3 .8-3.5 2M9 15h9a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1H9l-3 3v-4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1h3",
+  perks: "M8 21h8M12 17v4M7 4h10v3a5 5 0 0 1-10 0V4Z M7 5H4v1a4 4 0 0 0 4 4M17 5h3v1a4 4 0 0 1-4 4",
+  "verification-policy": "M12 3l7 3v5c0 4.5-2.9 8.4-7 10-4.1-1.6-7-5.5-7-10V6l7-3Zm-3 9 2 2 4-4",
   media: "M7 18a4 4 0 0 1-1-7.87A5.5 5.5 0 0 1 16.6 8.02 4.5 4.5 0 0 1 17.5 17H7Zm5-6v6m0-6-2.5 2.5M12 12l2.5 2.5",
   gallery: "M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm0 12 5-6 4 4 3-3 5 5M9 9a1.3 1.3 0 1 0 0-2.6A1.3 1.3 0 0 0 9 9Z",
   speakers: "M9 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-6 12c0-3.3 2.7-6 6-6s6 2.7 6 6M16 3.3a3 3 0 0 1 0 5.7M18.5 20c0-2.5-1.4-4.6-3.5-5.6",

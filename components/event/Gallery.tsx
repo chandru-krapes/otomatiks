@@ -70,12 +70,7 @@ function GalleryTile({
   );
 }
 
-/**
- * Event photo/video recap — driven by `event.gallery_items`
- * (`media_type`/`media_url`/`caption`, all straight from the backend; see
- * lib/types.ts `GalleryItem`). Grid tiles open a full-screen viewer with
- * real video playback rather than just a bigger static image.
- */
+
 export default function Gallery({ event }: { event: Event }) {
   const items = event.gallery_items;
   const headingId = useId();

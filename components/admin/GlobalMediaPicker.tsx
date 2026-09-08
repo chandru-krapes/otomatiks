@@ -14,25 +14,10 @@ import { ListSkeleton } from "@/components/ui/Skeleton";
 const IMAGE_EXTENSIONS = /\.(jpe?g|png|gif|webp|avif|svg)$/i;
 const VIDEO_EXTENSIONS = /\.(mp4|webm|mov|m4v)$/i;
 
-/** Best-effort media type from a key's extension — the platform-wide bucket has no
- * `media_type` field of its own (unlike a `GalleryItem`), so this is how a file picked
- * here gets classified once it's attached to a gallery, which does need one. */
 export function inferMediaKind(key: string): "image" | "video" {
   return VIDEO_EXTENSIONS.test(key) ? "video" : "image";
 }
 
-/**
- * The picker grid at the heart of "choose from the media library" — every upload flow in
- * the admin panel (event gallery, ticket gallery, banner, secondary image, speaker photo,
- * sponsor logo) offers this as an alternative to uploading the same file again. Exported as
- * plain content (not wrapped in its own `Modal`) so it can sit inside another dialog as a
- * tab, e.g. `AddMediaModal`'s "Media library" tab; `GlobalMediaPickerModal` below wraps it
- * for the places that just need a standalone picker.
- *
- * `IsAdmin`-only server-side (see `MediaObject` in lib/adminTypes.ts) — an organizer session
- * still sees this tab/button, since role isn't threaded down through every call site, but a
- * 403 here surfaces as a normal inline error rather than breaking anything.
- */
 export function GlobalMediaGrid({
   withAuth,
   mode = "multi",
@@ -136,7 +121,6 @@ export function GlobalMediaGrid({
                   {isVideo ? (
                     <video src={item.url} className="h-full w-full object-cover" muted />
                   ) : isImage ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- media library files are R2 URLs on an arbitrary host.
                     <img src={item.url} alt="" className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center bg-primary/5 p-2 text-center text-[10px] text-muted">{filename}</div>
@@ -174,8 +158,6 @@ export function GlobalMediaGrid({
   );
 }
 
-/** Standalone modal wrapper around `GlobalMediaGrid`, for the single-image fields (banner,
- * secondary image, speaker photo, sponsor logo) that just need a picker, not a tabbed dialog. */
 export default function GlobalMediaPickerModal({
   withAuth,
   mode = "single",

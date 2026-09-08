@@ -229,40 +229,95 @@ export interface CertificateRecord {
 
 export type EmailTrigger =
   | "registration_confirmation"
+  | "cancellation"
+  | "refund_processed"
   | "payment_reminder"
   | "event_reminder"
   | "schedule_update"
   | "venue_update"
-  | "cancellation"
   | "certificate_ready"
-  | "feedback_request";
+  | "feedback_request"
+  | "otp_verification";
 
-export const EMAIL_TRIGGERS: { value: EmailTrigger; label: string }[] = [
-  { value: "registration_confirmation", label: "Registration confirmation" },
-  { value: "payment_reminder", label: "Payment reminder" },
-  { value: "event_reminder", label: "Event reminder" },
-  { value: "schedule_update", label: "Schedule update" },
-  { value: "venue_update", label: "Venue update" },
-  { value: "cancellation", label: "Cancellation" },
-  { value: "certificate_ready", label: "Certificate ready" },
-  { value: "feedback_request", label: "Feedback request" },
+/** One insertable token for a trigger's editor — `key`/`label` populate the "Insert placeholder"
+ * dropdown, `sample` fills the client-side live-preview substitution (see `applyPlaceholderSamples`
+ * in EmailTemplatesSection). Sourced from `GET /email-triggers/`, not hardcoded, since the set of
+ * placeholders is a backend concern (a trigger gaining a field shouldn't need a frontend release). */
+export interface EmailPlaceholder {
+  key: string;
+  label: string;
+  sample: string;
+}
+
+/** One row of the trigger catalogue (`GET /email-triggers/`) — not event-scoped, so it's fetched
+ * once and cached for every event's settings page. */
+export interface EmailTriggerCatalogEntry {
+  trigger: EmailTrigger | string;
+  label: string;
+  placeholders: EmailPlaceholder[];
+}
+
+/** Static grouping for the settings-page sidebar. The catalogue itself (labels + placeholders)
+ * comes from the server via `listEmailTriggers`; this just controls how those triggers cluster
+ * on screen, matching the categories in the "Configurable Email Templates API" doc. */
+export const EMAIL_TRIGGER_GROUPS: { label: string; triggers: EmailTrigger[] }[] = [
+  { label: "Registration & tickets", triggers: ["registration_confirmation", "cancellation", "refund_processed"] },
+  { label: "Reminders", triggers: ["payment_reminder", "event_reminder", "feedback_request"] },
+  { label: "Event changes", triggers: ["schedule_update", "venue_update"] },
+  { label: "Certificates", triggers: ["certificate_ready"] },
+  { label: "Account", triggers: ["otp_verification"] },
 ];
 
 export interface EmailTemplate {
   id: number;
-  event: number;
+  /** `null` for a platform-default row returned against an event that hasn't customized this
+   * trigger — same row shape either way, just not this event's own record yet. */
+  event: number | null;
   trigger: EmailTrigger | string;
   subject: string;
   body_html: string;
+  available_placeholders: EmailPlaceholder[];
+  /** `true` when this event has no override and the row is the platform-wide default. */
+  is_platform_default: boolean;
+  updated_at: string;
 }
 
 export interface EmailLog {
   id: number;
-  recipient: string;
-  template: number;
+  recipient: number;
+  recipient_email: string;
+  registration?: number | null;
+  /** Exactly one of `template` (a trigger-driven `EmailTemplate`) / `custom_template` (a
+   * free-form `CustomEmailTemplate`) is set per row — which kind sent this email. */
+  template: number | null;
+  custom_template?: number | null;
   status: "queued" | "sent" | "failed" | string;
   sent_at?: string | null;
+  celery_task_id?: string;
+  created_at?: string;
 }
+
+/** A free-form, event-scoped announcement template — unlike `EmailTemplate`, it has no
+ * automated trigger; it's named by the organizer and sent manually to a chosen audience via
+ * `sendCustomEmailTemplate`. Placeholders are the smaller registrant-broadcast set
+ * (name/email/event/booking reference), not a trigger's event-specific fields. */
+export interface CustomEmailTemplate {
+  id: number;
+  event: number;
+  name: string;
+  subject: string;
+  body_html: string;
+  available_placeholders: EmailPlaceholder[];
+  updated_at: string;
+}
+
+/** Registration statuses selectable as a custom announcement's audience. `cancelled` is never
+ * pre-selected — see `sendCustomEmailTemplate`'s default. */
+export const CUSTOM_EMAIL_AUDIENCE_STATUSES: { value: "confirmed" | "pending_payment" | "cancelled"; label: string }[] = [
+  { value: "confirmed", label: "Confirmed registrations" },
+  { value: "pending_payment", label: "Pending payment" },
+  { value: "cancelled", label: "Cancelled" },
+];
 
 export interface AnalyticsSummary {
   today_registrations: number;
@@ -289,4 +344,27 @@ export interface AnalyticsDemographics {
   by_batch: Record<string, number>;
 }
 
+/** `GET /api/v1/events/{id}/analytics/funnel/` response row — one checkout-funnel step, in
+ * funnel order (see apps.analytics.services.funnel_summary). `sessions` is a distinct-session
+ * count, not a raw event count, so revisiting a step (e.g. going back to change a ticket) never
+ * inflates it. The trailing "payment_failed" row is an alternate outcome of the last step, not
+ * part of the descending viewed→...→paid chain — display it separately, not as one more bar. */
+export interface FunnelStep {
+  step: "viewed_event" | "selected_ticket" | "added_to_cart" | "entered_payment" | "paid" | "payment_failed" | string;
+  label: string;
+  sessions: number;
+}
+
 export type ReportKind = "attendance" | "revenue" | "tickets" | "registrants";
+
+/** One shared row governing every self-signup/login/checkout flow platform-wide (see the
+ * backend's `VerificationPolicy.get_solo()`) — not event-scoped, same singleton shape as
+ * `FounderMessage`. Every existing flow defaults to `"none"`/`false` (fully backward
+ * compatible) until an admin actively opts into a stronger requirement here. */
+export type VerificationRequirement = "none" | "email" | "phone" | "either" | "both";
+
+export interface VerificationPolicy {
+  phone_required_at_signup: boolean;
+  signup_verification: VerificationRequirement;
+  checkout_verification: VerificationRequirement;
+}

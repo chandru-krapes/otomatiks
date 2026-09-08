@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#066aab" />
+  <!-- Simple robot-face glyph — this platform's own "robotics/engineering" motif (see
+       .tech-grid in globals.css), used as the generic install icon for any event that hasn't
+       uploaded its own logo (see app/manifest.ts, which prefers event.logo when present). -->
+  <rect x="146" y="176" width="220" height="180" rx="36" fill="#ffffff" />
+  <circle cx="206" cy="266" r="20" fill="#066aab" />
+  <circle cx="306" cy="266" r="20" fill="#066aab" />
+  <rect x="196" y="316" width="120" height="16" rx="8" fill="#066aab" />
+  <line x1="256" y1="176" x2="256" y2="132" stroke="#ffffff" stroke-width="14" stroke-linecap="round" />
+  <circle cx="256" cy="112" r="20" fill="#ffffff" />
+</svg>

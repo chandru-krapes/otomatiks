@@ -41,7 +41,7 @@ export default function Badge({
 }) {
   return (
     <span
-      className={`inline-flex w-fit items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] ${TONES[tone]} ${className}`}
+      className={`inline-flex w-fit items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.14em] ${TONES[tone]} ${className}`}
     >
       {pulse && (
         <span className="relative flex h-1.5 w-1.5 shrink-0">

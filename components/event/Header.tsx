@@ -18,8 +18,6 @@ export default function Header({ event, navLinks }: { event: Event; navLinks: im
 
   return (
     <StickyHeaderShell>
-      {/* Keyboard users get past the nav in one keystroke instead of tabbing
-          through every section link on every page. */}
       <a href="#main" className="skip-link rounded-full bg-white px-4 py-2 text-sm font-semibold text-primary shadow-lg">
         Skip to content
       </a>

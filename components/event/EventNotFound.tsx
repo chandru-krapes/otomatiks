@@ -1,10 +1,3 @@
-/**
- * Shown when the request's subdomain doesn't resolve to a published event.
- *
- * Kept generic on purpose: at this point there is no event, so there is no
- * branding, theme colour or logo to apply — only the platform's own visual
- * language.
- */
 export default function EventNotFound({ subdomain }: { subdomain?: string | null }) {
   return (
     <main className="relative flex min-h-screen flex-1 flex-col items-center justify-center overflow-hidden px-6 text-center">

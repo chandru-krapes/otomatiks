@@ -18,16 +18,6 @@ import { EventCardGridSkeleton } from "@/components/ui/Skeleton";
 
 type MediaKind = "image" | "video";
 
-/**
- * Event gallery (apps/events `/gallery/`) — every photo/clip attached to
- * *this* event, with delete, a multi-file bulk upload, and a bulk add-by-URL
- * form. Distinct from the platform-wide Media library section (apps/common
- * `/media/`), which browses the whole Cloudflare bucket across every event;
- * this one only ever shows/writes rows tied to `event.id`. Ticket types get
- * their own scoped gallery of the same shape (see the "Manage media" action
- * in TicketsSection), so the upload/list plumbing here is written to be
- * reusable rather than baked into just this one screen.
- */
 export default function GallerySection({ event, withAuth }: { event: Event; withAuth: ReturnType<typeof useAdminSession>["withAuth"] }) {
   const [items, setItems] = useState<GalleryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,7 +72,6 @@ export default function GallerySection({ event, withAuth }: { event: Event; with
                 {item.media_type === "video" ? (
                   <video src={item.media_url} className="h-full w-full object-cover" muted />
                 ) : (
-                  // eslint-disable-next-line @next/next/no-img-element -- gallery media is an R2 URL on an arbitrary host.
                   <img src={item.media_url} alt={item.caption ?? ""} loading="lazy" className="h-full w-full object-cover" />
                 )}
               </div>
@@ -131,11 +120,7 @@ export default function GallerySection({ event, withAuth }: { event: Event; with
   );
 }
 
-/**
- * Shared add-media dialog — file upload (multi-select, bulk) and add-by-URL (multi-row,
- * bulk) in one modal. Takes its two write calls as props so TicketsSection's per-ticket
- * gallery modal can reuse this exact UI against the ticket-scoped endpoints instead.
- */
+
 export function AddMediaModal({
   onClose,
   onAdded,
@@ -153,9 +138,6 @@ export function AddMediaModal({
   const [attachError, setAttachError] = useState<string | null>(null);
   const [attaching, setAttaching] = useState(false);
 
-  /** Selecting from the media library re-attaches already-uploaded bucket files — a
-   * URL-only write through the same bulk-from-URL call the "Add from URL" tab uses, since
-   * the file is already hosted and needs no re-upload. */
   async function handlePickFromLibrary(items: MediaObject[]) {
     if (items.length === 0) return;
     setAttaching(true);

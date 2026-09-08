@@ -25,6 +25,21 @@ export function computeBookingTotal(basePrice: number, quantity: number, kind?: 
   return computeTotalPrice(basePrice, quantity);
 }
 
+/**
+ * Client-side preview of a validated promo code's effect on a subtotal —
+ * `discount_type`/`discount_value` straight from `POST /promo-codes/validate/`
+ * (see lib/api.ts `validatePromoCode`). The backend remains the authoritative
+ * source for the actual charged amount (it redeems the same code again,
+ * server-side, inside `createBooking`); this is only for showing the buyer
+ * what to expect before they submit. Never goes negative.
+ */
+export function applyDiscount(subtotal: number, discount: { discount_type?: string; discount_value?: string } | null): number {
+  if (!discount) return subtotal;
+  const value = Number(discount.discount_value) || 0;
+  const reduced = discount.discount_type === "percentage" ? subtotal - (subtotal * value) / 100 : subtotal - value;
+  return Math.max(0, reduced);
+}
+
 export function formatCurrency(value: number): string {
   if (Number.isNaN(value)) return String(value);
   if (value === 0) return "Free";

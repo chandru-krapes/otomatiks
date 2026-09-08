@@ -47,7 +47,12 @@ export const textareaClass = `${inputClass} resize-none`;
  * that happens to be readonly.
  */
 export const selectClass =
-  `${inputClass} cursor-pointer appearance-none bg-[length:1.35rem] bg-[right_0.75rem_center] bg-no-repeat pr-11 font-medium ` +
+  // `appearance-none` strips the native <select> chrome — including its
+  // implicit single-line rendering of the closed box's selected-option
+  // text. Without an explicit `truncate` here, a long option (a school
+  // name, say) wraps across multiple lines instead, growing this field
+  // taller than every sibling text input next to it.
+  `${inputClass} truncate cursor-pointer appearance-none bg-[length:1.35rem] bg-[right_0.75rem_center] bg-no-repeat pr-11 font-medium ` +
   "bg-primary/[0.035] hover:bg-primary/[0.06] focus:bg-white " +
   "bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 fill=%22none%22 viewBox=%220 0 24 24%22 stroke=%22%23066aab%22 stroke-width=%222.3%22%3E%3Cpath stroke-linecap=%22round%22 stroke-linejoin=%22round%22 d=%22M6 9l6 6 6-6%22/%3E%3C/svg%3E')]";
 

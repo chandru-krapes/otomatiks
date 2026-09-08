@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { CommunityProfileResponse, Event } from "@/lib/types";
 import { getCommunityProfile, listPublishedEvents } from "@/lib/api";
 import { clearSession, loadSession, type StoredSession } from "@/lib/auth";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatGender } from "@/lib/format";
 import AccountShell from "./AccountShell";
 import UpcomingEvents from "./UpcomingEvents";
 import Button from "@/components/ui/Button";
@@ -21,14 +21,11 @@ function ticketStatusClass(status: string) {
 
 export default function CommunityDashboard() {
   const router = useRouter();
-  // `undefined` = "haven't checked storage yet", distinct from `null` ("checked, no session") —
-  // see BookingDashboard for why this can't be read synchronously in useState's initializer
-  // (this "use client" component is still server-rendered for the initial HTML, where
-  // `localStorage` doesn't exist, so the client's first hydration-matching render can't
-  // already know the session either — it has to come from an effect, which only runs client-side).
   const [session, setSession] = useState<StoredSession | null | undefined>(undefined);
   useEffect(() => {
-    // Deliberate exception to react-hooks/set-state-in-effect — see BookingDashboard for why.
+    // Reads localStorage once on mount — this can't happen in useState's initializer since that
+    // would also run during server rendering, where localStorage doesn't exist and would
+    // desync the client's first hydration render from the server's.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSession(loadSession("community"));
   }, []);
@@ -38,7 +35,7 @@ export default function CommunityDashboard() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (session === undefined) return; // storage not checked yet (see the useEffect above)
+    if (session === undefined) return;
     if (!session) {
       router.replace("/community/login");
       return;
@@ -61,13 +58,6 @@ export default function CommunityDashboard() {
     router.replace("/community/login");
   }
 
-  // Two different moments, both of which used to render nothing at all — a
-  // real blank white page, not a hypothetical one, since checking
-  // `localStorage` for a session happens in an effect and can never be
-  // known on the very first render (see the comment above `useState`):
-  // storage not checked yet, or checked-and-empty with the redirect effect
-  // about to fire. Generic copy either way — this must never say
-  // "Signed in as…" before it's confirmed there's actually a session.
   if (!session) {
     return (
       <AccountShell eyebrow="Community account" title="Loading your profile…" maxWidth="max-w-4xl">
@@ -80,11 +70,6 @@ export default function CommunityDashboard() {
     <AccountShell eyebrow="Community account" title="Your community profile" maxWidth="max-w-4xl">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted">
-          {/* `session.user.email` is a community_student account's internal
-              placeholder address (`community-student-N@accounts.internal`),
-              never a real one the child chose or would recognize — the
-              display id (or, once loaded, their own name) is what actually
-              identifies them to themselves. */}
           Signed in as{" "}
           <span className="font-semibold text-primary">{profile?.full_name ?? session.user.full_name}</span>
         </p>
@@ -100,7 +85,7 @@ export default function CommunityDashboard() {
             {loading ? (
               <div role="status" aria-busy="true" className="grid gap-4 sm:grid-cols-2">
                 <span className="sr-only">Loading your profile</span>
-                {Array.from({ length: 4 }, (_, index) => (
+                {Array.from({ length: 6 }, (_, index) => (
                   <div key={index} className="flex flex-col gap-2">
                     <Skeleton className="h-3 w-20" />
                     <Skeleton className="h-4 w-32" />
@@ -132,6 +117,10 @@ export default function CommunityDashboard() {
                     <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Grade</dt>
                     <dd className="mt-1 text-sm font-semibold text-primary">{profile.grade || "—"}</dd>
                   </div>
+                  <div>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Gender</dt>
+                    <dd className="mt-1 text-sm font-semibold text-primary">{formatGender(profile.gender) ?? "—"}</dd>
+                  </div>
                 </dl>
               )
             )}
@@ -140,8 +129,6 @@ export default function CommunityDashboard() {
           <section className="glass-panel flex flex-col gap-4 rounded-3xl p-8">
             <h2 className="font-display text-lg font-bold text-primary">Event history & certificates</h2>
             {profile && profile.history.length > 0 ? (
-              // Scoped server-side to this claimed Student's own attendee_entries —
-              // never a sibling's or the parent's (see CommunityProfileResponse).
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[520px] border-collapse text-left text-sm">
                   <thead>

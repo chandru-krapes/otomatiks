@@ -88,6 +88,7 @@ export function Select({
   className = "",
   placeholder,
   disabled,
+  required,
   name,
   variant = "light",
   "aria-label": ariaLabel,
@@ -98,6 +99,13 @@ export function Select({
   className?: string;
   placeholder?: string;
   disabled?: boolean;
+  /** Forwarded to Radix's `Select.Root` (real bubble-input validation), plus `aria-required` on
+   * the trigger. Not a hard guarantee on its own here — an explicit `<option value="">` (the
+   * "Select…" placeholder item some call sites add so the resting label reads right; see that
+   * item's own comment where it's used) is itself a real, selectable value as far as this
+   * component and the browser are concerned, so picking it still counts as "answered". Pair with
+   * an actual submit-time check wherever leaving it on that placeholder must be blocked. */
+  required?: boolean;
   name?: string;
   variant?: "light" | "dark";
   /** For a select with no visible `<label>` of its own (e.g. AttendeeCard's saved-student
@@ -119,13 +127,21 @@ export function Select({
       value={radixValue}
       onValueChange={(next) => onChange({ target: { value: next === EMPTY_VALUE ? "" : next } })}
       disabled={disabled}
+      required={required}
       name={name}
     >
       <RadixSelect.Trigger
         aria-label={ariaLabel}
+        aria-required={required || undefined}
         className={`group flex w-full items-center justify-between gap-2 rounded-xl border px-4 py-3 text-left text-base outline-none transition-[border-color,box-shadow,background-color] duration-[var(--dur-fast)] ease-[var(--ease-out)] sm:text-sm ${TRIGGER_VARIANTS[variant]} ${className}`}
       >
-        <RadixSelect.Value placeholder={placeholder}>{selectedLabel}</RadixSelect.Value>
+        {/* `min-w-0` is load-bearing: as a flex child, this element's default min-width is
+            "auto" (its content's width), which lets it overflow past the trigger and wrap onto
+            a second line instead of truncating — growing this control taller than every plain
+            input beside it in the same row (see DatePicker's identical fix). */}
+        <RadixSelect.Value placeholder={placeholder} className="block min-w-0 flex-1 truncate">
+          {selectedLabel}
+        </RadixSelect.Value>
         <RadixSelect.Icon>
           <ChevronIcon />
         </RadixSelect.Icon>
@@ -134,7 +150,13 @@ export function Select({
         <RadixSelect.Content
           position="popper"
           sideOffset={6}
-          className="admin-scroll-light z-[70] max-h-72 w-[var(--radix-select-trigger-width)] overflow-y-auto rounded-2xl border border-hairline-strong bg-white p-1.5 shadow-[var(--elev-3)] animate-pop-in"
+          // `w-max` (bounded below by the trigger's own width, above by a cap so one very long
+          // label can't stretch the panel edge-to-edge) instead of pinning to the trigger's
+          // width outright — the old fixed width forced every option's label to wrap onto
+          // multiple lines the moment it was longer than the trigger button itself (a school
+          // name, say), even though the floating panel has no reason to match that width.
+          // Radix's own collision handling still keeps it from overflowing the viewport.
+          className="admin-scroll-light z-[70] max-h-72 w-max min-w-[var(--radix-select-trigger-width)] max-w-[26rem] overflow-y-auto rounded-2xl border border-hairline-strong bg-white p-1.5 shadow-[var(--elev-3)] animate-pop-in"
         >
           <RadixSelect.Viewport>
             {options.map((option) => (
@@ -142,7 +164,7 @@ export function Select({
                 key={option.value}
                 value={option.value}
                 disabled={option.disabled}
-                className="flex cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm text-foreground outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-secondary/10 data-[highlighted]:text-secondary data-[state=checked]:font-semibold data-[state=checked]:text-primary"
+                className="flex cursor-pointer items-center justify-between gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm text-foreground outline-none data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-secondary/10 data-[highlighted]:text-secondary data-[state=checked]:font-semibold data-[state=checked]:text-primary"
               >
                 <RadixSelect.ItemText>{option.label}</RadixSelect.ItemText>
                 <RadixSelect.ItemIndicator className="text-secondary">
@@ -179,6 +201,7 @@ export function SelectField({
   onChange: (event: { target: { value: string } }) => void;
   placeholder?: string;
   disabled?: boolean;
+  required?: boolean;
   name?: string;
 }) {
   return (

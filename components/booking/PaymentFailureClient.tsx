@@ -7,13 +7,6 @@ import Alert from "@/components/ui/Alert";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 
-/**
- * `/payment/failure?reference=…` — the payment attempt itself failed
- * (declined, cancelled, timed out). The booking behind `reference` is still
- * sitting `pending_payment` on the backend, not lost, so this points back at
- * `/bookings/[reference]` (BookingConfirmationView's "Pay Now" flow) rather
- * than restarting checkout from scratch.
- */
 export default function PaymentFailureClient({ event }: { event: Event }) {
   const searchParams = useSearchParams();
   const reference = searchParams.get("reference");

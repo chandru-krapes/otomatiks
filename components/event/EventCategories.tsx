@@ -1,8 +1,8 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import type { Event, TicketType } from "@/lib/types";
+import type { Event, GalleryItem, TicketType } from "@/lib/types";
 import { formatClockTime, formatDate } from "@/lib/format";
 import { formatCurrency } from "@/lib/pricing";
 import { isTicketAvailable } from "@/lib/booking";
@@ -11,7 +11,6 @@ import AddToCartButton from "@/components/booking/AddToCartButton";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import Lightbox, { useLightbox } from "@/components/ui/Lightbox";
-import LazyVideoThumb from "@/components/ui/LazyVideoThumb";
 
 function CalendarIcon() {
   return (
@@ -40,16 +39,6 @@ function PinIcon() {
   );
 }
 
-/** Indian Rupee sign (₹) — this event's prices are always INR, so the icon
- * says so rather than showing a generic/foreign currency glyph. */
-function FeeIcon() {
-  return (
-    <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M6 3h12M6 8h12M6 13h3M9 13c6.667 0 6.667-10 0-10m-3 10 8.5 8" />
-    </svg>
-  );
-}
-
 function PlayIcon({ className = "h-6 w-6" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -58,34 +47,230 @@ function PlayIcon({ className = "h-6 w-6" }: { className?: string }) {
   );
 }
 
-/** One fact row in the sidebar card — day, time, venue, fee. Omitted entirely
- * when the ticket type didn't supply that field, never a placeholder. */
-function InfoRow({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+function ChevronIcon({ direction }: { direction: "prev" | "next" }) {
   return (
-    <div className="flex items-center gap-3 text-sm text-foreground/80">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-secondary/10 text-secondary">
-        {icon}
-      </span>
-      {children}
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={direction === "prev" ? "M15 6l-6 6 6 6" : "M9 6l6 6-6 6"} />
+    </svg>
+  );
+}
+
+function CategoryMedia({
+  gallery,
+  categoryName,
+  onExpand,
+}: {
+  gallery: GalleryItem[];
+  categoryName: string;
+  onExpand: (index: number) => void;
+}) {
+  const [index, setIndex] = useState(0);
+  const item = gallery[index];
+  const hasMultiple = gallery.length > 1;
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [armed, setArmed] = useState(false);
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    const node = wrapperRef.current;
+    if (!node || armed) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setArmed(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "200px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [armed]);
+
+  function go(next: number) {
+    setIndex((next + gallery.length) % gallery.length);
+  }
+
+  // Auto-advance through the gallery once it's on screen, unless the current
+  // slide is a video (let it play out) or the user is hovering to browse manually.
+  useEffect(() => {
+    if (!hasMultiple || !armed || paused || item.media_type === "video") return;
+    const timer = window.setInterval(() => {
+      setIndex((current) => (current + 1) % gallery.length);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [hasMultiple, armed, paused, item.media_type, gallery.length]);
+
+  return (
+    <div
+      ref={wrapperRef}
+      className="group/media absolute inset-0 h-full w-full"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <button
+        type="button"
+        onClick={() => onExpand(index)}
+        aria-label={item.caption ? `View ${item.caption}` : `View ${categoryName} media`}
+        className="absolute inset-0 h-full w-full"
+      >
+        {item.media_type === "video" ? (
+          <video
+            key={item.id}
+            src={armed ? item.media_url : undefined}
+            preload="metadata"
+            autoPlay
+            muted
+            loop
+            playsInline
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <Image
+            src={item.media_url}
+            alt={item.caption ?? ""}
+            fill
+            sizes="(min-width: 640px) 50vw, 100vw"
+            className="object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover/media:scale-105"
+          />
+        )}
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-primary/40 via-transparent to-transparent" />
+        {item.media_type !== "video" && (
+          <span className="pointer-events-none absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-primary shadow-xl backdrop-blur-sm transition-transform duration-[var(--dur-med)] ease-[var(--ease-out)] group-hover/media:scale-110">
+            <PlayIcon className="h-5 w-5 translate-x-[2px]" />
+          </span>
+        )}
+      </button>
+
+      {hasMultiple && (
+        <>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              go(index - 1);
+            }}
+            aria-label="Previous media"
+            className="focus-ring press absolute left-3 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-primary/60 text-white opacity-0 backdrop-blur-sm transition-opacity duration-[var(--dur-fast)] group-hover/media:opacity-100 hover:bg-primary/80"
+          >
+            <ChevronIcon direction="prev" />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              go(index + 1);
+            }}
+            aria-label="Next media"
+            className="focus-ring press absolute right-3 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-primary/60 text-white opacity-0 backdrop-blur-sm transition-opacity duration-[var(--dur-fast)] group-hover/media:opacity-100 hover:bg-primary/80"
+          >
+            <ChevronIcon direction="next" />
+          </button>
+
+          <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1.5">
+            {gallery.map((galleryItem, itemIndex) => (
+              <button
+                key={galleryItem.id}
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIndex(itemIndex);
+                }}
+                aria-label={`Show media ${itemIndex + 1} of ${gallery.length}`}
+                aria-current={itemIndex === index}
+                className={`h-1.5 rounded-full transition-all duration-[var(--dur-fast)] ${
+                  itemIndex === index ? "w-5 bg-white" : "w-1.5 bg-white/50 hover:bg-white/80"
+                }`}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
-export default function EventCategories({ event }: { event: Event }) {
-  const categories = event.ticket_types;
-  const [activeIndex, setActiveIndex] = useState(0);
-  const tabsId = useId();
+function CategoryCard({ category }: { category: TicketType }) {
   const lightbox = useLightbox();
+  const gallery = category.gallery_items;
 
-  const active: TicketType | undefined = categories?.[activeIndex];
-  const gallery = active?.gallery_items;
-  const heroItem = gallery?.[0];
-
-  const dateLabel = formatDate(active?.start_time);
-  const startLabel = formatClockTime(active?.start_time);
-  const endLabel = formatClockTime(active?.end_time);
+  const dateLabel = formatDate(category.start_time);
+  const startLabel = formatClockTime(category.start_time);
+  const endLabel = formatClockTime(category.end_time);
   const timeLabel = startLabel && endLabel ? `${startLabel} – ${endLabel}` : startLabel;
-  const available = active ? isTicketAvailable(active) : false;
+
+  return (
+    <article className="card flex flex-col overflow-hidden rounded-3xl">
+      <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-primary/8 via-transparent to-secondary/8">
+        {gallery && gallery.length > 0 ? (
+          <CategoryMedia gallery={gallery} categoryName={category.name} onExpand={lightbox.open} />
+        ) : (
+          <div className="tech-grid flex h-full w-full items-center justify-center">
+            <span className="ghost-stroke select-none text-5xl font-extrabold uppercase">
+              {category.name.slice(0, 2).toUpperCase()}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <div className="flex flex-1 flex-col gap-4 p-6 sm:p-7">
+        {category.access && category.access.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {category.access.map((item) => (
+              <Badge key={item.id} tone="accent">
+                {item.kind}
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        <h3 className="font-display text-2xl font-bold leading-snug text-primary sm:text-3xl">{category.name}</h3>
+        <p className="text-sm leading-relaxed text-muted">
+          {category.description || category.short_description || "More details for this category are coming soon."}
+        </p>
+
+        {(dateLabel || timeLabel || category.venue) && (
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-primary/10 pt-4 text-sm text-foreground/70">
+            {dateLabel && (
+              <span className="flex items-center gap-1.5">
+                <CalendarIcon />
+                {dateLabel}
+              </span>
+            )}
+            {timeLabel && (
+              <span className="flex items-center gap-1.5">
+                <ClockIcon />
+                {timeLabel}
+              </span>
+            )}
+            {category.venue && (
+              <span className="flex items-center gap-1.5">
+                <PinIcon />
+                {category.venue}
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="mt-auto flex items-center justify-between gap-3 pt-2">
+          <p className="font-display text-2xl font-extrabold leading-none text-primary">
+            {formatCurrency(Number(category.price) || 0)}
+          </p>
+          <AddToCartButton ticket={category} />
+        </div>
+      </div>
+
+      {gallery && lightbox.activeIndex !== null && (
+        <Lightbox items={gallery} activeIndex={lightbox.activeIndex} onClose={lightbox.close} onNavigate={lightbox.navigate} />
+      )}
+    </article>
+  );
+}
+
+export default function EventCategories({ event }: { event: Event }) {
+  // Paused/sold-out/closed categories are left off the page entirely rather than shown with a
+  // disabled "Unavailable" pill — nothing purchasable here anyway, so there's nothing this
+  // browse-by-category section gains from listing it.
+  const categories = event.ticket_types?.filter(isTicketAvailable);
 
   return (
     <section id="event" className="relative overflow-hidden px-6 py-24 lg:px-10">
@@ -100,208 +285,13 @@ export default function EventCategories({ event }: { event: Event }) {
             description="Competition tracks and sessions will be listed here once they're finalised."
           />
         ) : (
-          <div className="grid gap-8 lg:grid-cols-[minmax(0,320px)_1fr] lg:items-start">
-            {/* Picker — sidebar card on desktop, matching the reference; a
-                horizontal scroller on mobile, same pattern as Schedule's day
-                tabs and the ticket picker this replaced. */}
-            <div
-              role="tablist"
-              aria-label="Event categories"
-              aria-orientation="vertical"
-              className="no-scrollbar flex gap-3 overflow-x-auto pb-1 lg:sticky lg:top-24 lg:flex-col lg:overflow-visible lg:pb-0"
-            >
-              {categories.map((category, index) => {
-                const selected = index === activeIndex;
-                const categoryAvailable = isTicketAvailable(category);
-                return (
-                  <div
-                    key={category.id}
-                    className={`card w-64 shrink-0 rounded-2xl p-6 transition-all duration-[var(--dur-med)] ease-[var(--ease-out)] lg:w-full ${
-                      selected ? "border-secondary/40 shadow-[var(--elev-2)]" : "hover:-translate-y-0.5 hover:border-primary/25"
-                    }`}
-                  >
-                    {/* The tab itself only covers the "pick this category"
-                        part — the Register CTA below is a real link and
-                        can't be nested inside a <button> without breaking
-                        both the CTA's click and this tab's semantics. */}
-                    <button
-                      type="button"
-                      role="tab"
-                      id={`${tabsId}-tab-${index}`}
-                      aria-selected={selected}
-                      aria-controls={`${tabsId}-panel`}
-                      tabIndex={selected ? 0 : -1}
-                      onClick={() => setActiveIndex(index)}
-                      onKeyDown={(keyEvent) => {
-                        const forward = keyEvent.key === "ArrowRight" || keyEvent.key === "ArrowDown";
-                        const backward = keyEvent.key === "ArrowLeft" || keyEvent.key === "ArrowUp";
-                        if (!forward && !backward) return;
-                        keyEvent.preventDefault();
-                        const next = (index + (forward ? 1 : -1) + categories.length) % categories.length;
-                        setActiveIndex(next);
-                        document.getElementById(`${tabsId}-tab-${next}`)?.focus();
-                      }}
-                      className="focus-ring press block w-full rounded-lg text-left"
-                    >
-                      <p
-                        className={`font-boldonse text-lg font-extrabold uppercase leading-snug tracking-tight transition-colors duration-[var(--dur-med)] ${
-                          selected ? "text-primary" : "text-primary/70"
-                        }`}
-                      >
-                        {category.name}
-                      </p>
-                      <span
-                        aria-hidden="true"
-                        className={`mt-2 block h-1 w-10 origin-left rounded-full bg-accent transition-transform duration-[var(--dur-med)] ease-[var(--ease-out)] ${
-                          selected ? "scale-x-100" : "scale-x-0"
-                        }`}
-                      />
-                      {category.short_description && (
-                        <p className="mt-3 line-clamp-2 text-sm leading-relaxed text-muted">
-                          {category.short_description}
-                        </p>
-                      )}
-                    </button>
-
-                    {/* Only the facts this category actually has — the same
-                        essentials shown large in the detail panel, compact. */}
-                    <div className="mt-4 flex flex-col gap-2 border-t border-primary/10 pt-4">
-                      {formatDate(category.start_time) && (
-                        <InfoRow icon={<CalendarIcon />}>
-                          <span className="text-xs">{formatDate(category.start_time)}</span>
-                        </InfoRow>
-                      )}
-                      {formatClockTime(category.start_time) && (
-                        <InfoRow icon={<ClockIcon />}>
-                          <span className="text-xs">
-                            {formatClockTime(category.start_time)}
-                            {formatClockTime(category.end_time) ? ` – ${formatClockTime(category.end_time)}` : ""}
-                          </span>
-                        </InfoRow>
-                      )}
-                      {category.venue && (
-                        <InfoRow icon={<PinIcon />}>
-                          <span className="text-xs">Venue - {category.venue}</span>
-                        </InfoRow>
-                      )}
-                      <InfoRow icon={<FeeIcon />}>
-                        <span className="text-xs">Participation Fees - {formatCurrency(Number(category.price) || 0)}</span>
-                      </InfoRow>
-                    </div>
-
-                    {categoryAvailable ? (
-                      <AddToCartButton ticket={category} size="sm" className="mt-5 w-full" />
-                    ) : (
-                      <span className="mt-5 flex w-full items-center justify-center rounded-full border border-primary/10 bg-primary/5 px-4 py-2 text-xs font-semibold text-muted">
-                        Unavailable
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Detail panel: media on top, description below — matches the
-                reference layout, built from the category's own gallery
-                instead of a generic placeholder. */}
-            {active && (
-              <div key={activeIndex} role="tabpanel" id={`${tabsId}-panel`} aria-labelledby={`${tabsId}-tab-${activeIndex}`} className="animate-pop-in">
-                <div className="card overflow-hidden rounded-3xl">
-                  <div className="relative aspect-video overflow-hidden bg-gradient-to-br from-primary/8 via-transparent to-secondary/8 sm:aspect-[16/8]">
-                    {heroItem ? (
-                      <button
-                        type="button"
-                        onClick={() => lightbox.open(0)}
-                        aria-label={heroItem.caption ? `View ${heroItem.caption}` : "View category media"}
-                        className="group absolute inset-0 h-full w-full"
-                      >
-                        {heroItem.media_type === "video" ? (
-                          <LazyVideoThumb
-                            src={heroItem.media_url}
-                            className="h-full w-full object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
-                          />
-                        ) : (
-                          <Image
-                            src={heroItem.media_url}
-                            alt={heroItem.caption ?? ""}
-                            fill
-                            sizes="(min-width: 640px) 700px, 100vw"
-                            className="object-cover transition-transform duration-[var(--dur-slow)] ease-[var(--ease-out)] group-hover:scale-105"
-                          />
-                        )}
-                        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-primary/40 via-transparent to-transparent" />
-                        <span className="pointer-events-none absolute left-1/2 top-1/2 flex h-16 w-16 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-primary shadow-xl backdrop-blur-sm transition-transform duration-[var(--dur-med)] ease-[var(--ease-out)] group-hover:scale-110">
-                          <PlayIcon className="h-6 w-6 translate-x-[2px]" />
-                        </span>
-                        {gallery && gallery.length > 1 && (
-                          <span className="absolute right-4 top-4 rounded-full bg-primary/80 px-3 py-1 text-xs font-bold text-white backdrop-blur-sm">
-                            +{gallery.length - 1} more
-                          </span>
-                        )}
-                      </button>
-                    ) : (
-                      <div className="tech-grid flex h-full w-full items-center justify-center">
-                        <span className="ghost-stroke select-none text-6xl font-extrabold uppercase sm:text-7xl">
-                          {String(activeIndex + 1).padStart(2, "0")}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="flex flex-col gap-4 p-6 sm:p-8">
-                    {active.access && active.access.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {active.access.map((item) => (
-                          <Badge key={item.id} tone="accent">
-                            {item.kind}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-
-                    <h3 className="font-display text-2xl font-bold leading-snug text-primary sm:text-3xl">
-                      {active.name}
-                    </h3>
-
-                    <p className="leading-relaxed text-muted">
-                      {active.description || active.short_description || "More details for this category are coming soon."}
-                    </p>
-
-                    {(dateLabel || timeLabel || active.venue) && (
-                      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-primary/10 pt-4 text-sm text-foreground/70">
-                        {dateLabel && (
-                          <span className="flex items-center gap-1.5">
-                            <CalendarIcon />
-                            {dateLabel}
-                          </span>
-                        )}
-                        {timeLabel && (
-                          <span className="flex items-center gap-1.5">
-                            <ClockIcon />
-                            {timeLabel}
-                          </span>
-                        )}
-                        {active.venue && (
-                          <span className="flex items-center gap-1.5">
-                            <PinIcon />
-                            {active.venue}
-                          </span>
-                        )}
-                      </div>
-                    )}
-
-                    {available && <AddToCartButton ticket={active} className="mt-2 w-fit" />}
-                  </div>
-                </div>
-              </div>
-            )}
+          <div className="mt-14 grid gap-8 sm:grid-cols-2">
+            {categories.map((category) => (
+              <CategoryCard key={category.id} category={category} />
+            ))}
           </div>
         )}
       </div>
-
-      {gallery && lightbox.activeIndex !== null && (
-        <Lightbox items={gallery} activeIndex={lightbox.activeIndex} onClose={lightbox.close} onNavigate={lightbox.navigate} />
-      )}
     </section>
   );
 }

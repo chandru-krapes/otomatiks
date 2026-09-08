@@ -13,6 +13,9 @@ import { EventPageSkeleton } from "@/components/ui/Skeleton";
 
 import OverviewSection from "./sections/OverviewSection";
 import EventsSection from "./sections/EventsSection";
+import FounderMessageSection from "./sections/FounderMessageSection";
+import PerksSection from "./sections/PerksSection";
+import VerificationPolicySection from "./sections/VerificationPolicySection";
 import MediaLibrarySection from "./sections/MediaLibrarySection";
 import GallerySection from "./sections/GallerySection";
 import SpeakersSection from "./sections/SpeakersSection";
@@ -24,19 +27,9 @@ import AttendanceSection from "./sections/AttendanceSection";
 import TeamSection from "./sections/TeamSection";
 import BatchingSection from "./sections/BatchingSection";
 import CertificatesSection from "./sections/CertificatesSection";
-import NotificationsSection from "./sections/NotificationsSection";
+import EmailTemplatesSection from "./sections/EmailTemplatesSection";
 import ReportsSection from "./sections/ReportsSection";
 
-/**
- * Root of the `/admin` staff console. Gates on a login (see AdminLogin),
- * then loads every event the signed-in user can see and renders one of the
- * eleven management sections against whichever event is currently selected.
- *
- * There's no server-side role check available here — "organizer" and
- * "volunteer" are per-event memberships rather than a field on the user
- * record — so `listAllEvents` returning an empty/forbidden result is treated
- * as "this account has no staff access" rather than crashing the page.
- */
 export default function AdminApp() {
   const { session, loading, expired, withAuth, logout, setSession } = useAdminSession();
   const [events, setEvents] = useState<Event[]>([]);
@@ -44,11 +37,12 @@ export default function AdminApp() {
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<number | string | null>(null);
   const [section, setSection] = useState<AdminSectionId>("events");
+  const [initializing, setInitializing] = useState(true);
 
   function reloadEvents() {
     setEventsLoading(true);
     setEventsError(null);
-    withAuth<Event[]>((token) => listAllEvents(token).then((data) => ({ ok: true as const, data }))).then((result) => {
+    return withAuth<Event[]>((token) => listAllEvents(token).then((data) => ({ ok: true as const, data }))).then((result) => {
       if (result.ok) {
         setEvents(result.data);
         if (!selectedEventId && result.data[0]) {
@@ -67,15 +61,16 @@ export default function AdminApp() {
       if (session === undefined) return;
       if (!session) {
         setEventsLoading(false);
+        setInitializing(false);
         return;
       }
-      reloadEvents();
+      await reloadEvents();
+      setInitializing(false);
     }
     init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  if (loading) return <EventPageSkeleton />;
+  if (loading || initializing) return <EventPageSkeleton />;
 
   if (!session || expired) {
     return (
@@ -121,9 +116,13 @@ export default function AdminApp() {
           withAuth={withAuth}
         />
       ) : section === "media" ? (
-        // Platform-wide, not scoped to the selected event — the whole reason it's branched
-        // here, ahead of the `!selectedEvent` gate below, same as "events" above.
         <MediaLibrarySection withAuth={withAuth} />
+      ) : section === "founder-message" ? (
+        <FounderMessageSection withAuth={withAuth} />
+      ) : section === "perks" ? (
+        <PerksSection events={events} withAuth={withAuth} />
+      ) : section === "verification-policy" ? (
+        <VerificationPolicySection withAuth={withAuth} />
       ) : !selectedEvent ? (
         <EmptyState title="No event selected" description="Pick an event from the sidebar, or create one under Events." />
       ) : section === "overview" ? (
@@ -149,7 +148,7 @@ export default function AdminApp() {
       ) : section === "certificates" ? (
         <CertificatesSection event={selectedEvent} withAuth={withAuth} />
       ) : section === "notifications" ? (
-        <NotificationsSection event={selectedEvent} withAuth={withAuth} />
+        <EmailTemplatesSection event={selectedEvent} withAuth={withAuth} />
       ) : section === "reports" ? (
         <ReportsSection event={selectedEvent} withAuth={withAuth} />
       ) : null}

@@ -24,16 +24,6 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/**
- * Platform-wide media library (apps/common `/media/`) — browses the whole Cloudflare R2
- * bucket across every folder every upload flow in this admin panel writes into, not one
- * event's gallery (see GallerySection for that). `IsAdmin`-only: R2 keys aren't tagged by
- * event, so there's no way to scope this to "your" events the way everything else here is.
- *
- * Cursor-paginated rather than page-numbered (R2/S3 listing has no total count), so this
- * accumulates pages into one growing list behind a "Load more" button instead of the
- * page-number pagination used elsewhere.
- */
 export default function MediaLibrarySection({ withAuth }: { withAuth: ReturnType<typeof useAdminSession>["withAuth"] }) {
   const [folder, setFolder] = useState("");
   const [items, setItems] = useState<MediaObject[]>([]);

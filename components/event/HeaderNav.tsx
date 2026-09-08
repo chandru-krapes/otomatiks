@@ -3,23 +3,11 @@
 import { useEffect, useState } from "react";
 import type { NavLink } from "@/lib/types";
 
-/**
- * Desktop nav with a live active indicator.
- *
- * The nav is entirely in-page anchors (`#tickets`, `#speakers`, … — see
- * lib/nav.ts), so "active" means "which section is currently under the
- * header", not which route is mounted. One IntersectionObserver watches
- * every section that a nav link points at and reports the topmost visible
- * one; the underline itself is CSS (`.underline-grow[data-active]`).
- *
- * `rootMargin` compensates for the sticky header: without the top inset, a
- * section would register as active while still hidden behind the bar.
- */
+// Desktop nav with a live active indicator for the event website
 export default function HeaderNav({ links }: { links: NavLink[] }) {
   const [activeHref, setActiveHref] = useState<string | null>(null);
 
   useEffect(() => {
-    // Only hash links map to a section on this page.
     const hashLinks = links.filter((link) => link.href.startsWith("#"));
     if (hashLinks.length === 0) return;
 
@@ -42,8 +30,6 @@ export default function HeaderNav({ links }: { links: NavLink[] }) {
           else visible.delete(href);
         }
 
-        // Several sections can be on screen at once; the one nearest the top
-        // of the viewport is the one the reader is actually in.
         const topmost = sections
           .filter((section) => visible.has(section.href))
           .sort(

@@ -9,19 +9,6 @@ import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
 import type { StoredSession } from "@/lib/auth";
 
-/**
- * Sign-in for the staff console (`/admin`). No self-signup here — every role
- * that can reach this screen (admin, organizer, volunteer) is provisioned or
- * invited elsewhere (POST .../accounts/schools/ for admin-provisioned
- * accounts, POST .../memberships/ for organizer/volunteer invites), not
- * created from this form.
- *
- * This screen can't tell in advance whether an authenticated user actually
- * holds any staff role — "organizer" and "volunteer" are per-event
- * memberships, not a field on the user record — so it accepts any successful
- * login and lets the first admin API call's 403 be the real gate (see
- * AdminApp's empty/unauthorized state).
- */
 export default function AdminLogin({ onSignedIn }: { onSignedIn: (session: StoredSession) => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -69,14 +56,6 @@ export default function AdminLogin({ onSignedIn }: { onSignedIn: (session: Store
         </div>
 
         <div
-          // `!` on the input overrides: Field.tsx's base `inputClass` hard-codes `bg-white`
-          // for the light-themed forms it's shared with, which otherwise beats this dark-theme
-          // override on specificity, leaving light text sitting on a white fill — invisible.
-          // The `:-webkit-autofill` pair does the same for Chrome/Safari's own forced
-          // autofill fill (a pale, opaque white the moment a saved credential is suggested,
-          // not just accepted): an inset `box-shadow` the size of the field paints straight
-          // over it, and pinning `-webkit-text-fill-color` keeps the typed text light-on-dark
-          // instead of light-on-(browser's)-white.
           className="flex flex-col gap-5 [&_label>span]:text-on-surface/50 [&_input]:!border-white/15 [&_input]:!bg-white/[0.06] [&_input]:!text-on-surface [&_input]:placeholder:!text-on-surface/30 [&_input:-webkit-autofill]:![-webkit-text-fill-color:var(--on-surface)] [&_input:-webkit-autofill]:![box-shadow:0_0_0_1000px_var(--surface)_inset] [&_button]:text-on-surface/40 [&_button:hover]:text-on-surface"
         >
           <TextField

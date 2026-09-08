@@ -3,6 +3,24 @@
  * component renders backend dates consistently.
  */
 
+/** "jane.doe@example.com" -> "j***@example.com" — for showing where a
+ * verification code was sent without echoing the full address back. Falls
+ * back to the raw string for anything that isn't shaped like an email. */
+export function maskEmail(email: string): string {
+  const [local, domain] = email.split("@");
+  if (!local || !domain) return email;
+  return `${local[0]}***@${domain}`;
+}
+
+/** Backend gender values are lowercase choice keys ("male"/"female"/"others" — see
+ * `Attendee.Gender` in apps/registration/models.py) — this is the one place that turns
+ * one into display copy ("Male"/"Female"/"Others"). `null` for blank/unset, same as
+ * every other optional-field formatter here, so callers can `??` a fallback consistently. */
+export function formatGender(value: string | null | undefined): string | null {
+  if (!value) return null;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 export function formatDate(value: string | null | undefined, options?: Intl.DateTimeFormatOptions): string | null {
   if (!value) return null;
   const date = new Date(value);

@@ -4,16 +4,6 @@ import type { ReactNode } from "react";
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 
-/**
- * Small shared primitives for the admin console — kept local to
- * components/admin rather than folded into components/ui, since these are
- * console-specific (a data table shell, a stat tile, a modal) that the
- * public/booking site has no equivalent for.
- */
-
-/** `datetime-local` inputs need `YYYY-MM-DDTHH:mm` in local time, not an ISO string — shared
- * by every admin form with a date/time field (events, promo codes, …) rather than each
- * reimplementing the same conversion. */
 export function toLocalInput(value: string | null | undefined): string {
   if (!value) return "";
   const date = new Date(value);
@@ -123,9 +113,6 @@ export function Td({ children, className = "" }: { children: ReactNode; classNam
 export function Tr({ children }: { children: ReactNode }) {
   return <tr className="border-b border-hairline last:border-0 hover:bg-primary/[0.02]">{children}</tr>;
 }
-
-/** Simple, dependency-free modal — the console has no other overlay component to reuse
- * (Lightbox is gallery-image-specific), and every use here is a short create/edit form. */
 export function Modal({
   title,
   onClose,
@@ -148,25 +135,10 @@ export function Modal({
   if (typeof document === "undefined") return null;
 
   return createPortal(
-    // `bg-black/60`, not `backdrop-blur-sm` — a `backdrop-filter` on a full-viewport `fixed`
-    // layer forces the compositor to re-sample everything behind it (this console's tables,
-    // cards, and the sidebar's own `backdrop-blur-md` header) every single frame of the
-    // opening animation, which is exactly what read as "laggy" opening any dialog. A flat,
-    // slightly darker scrim gives the same separation from the page for a fraction of the
-    // compositing cost — `contain: paint/layout` on top so this layer's own paint work can't
-    // spill into the rest of the page's either.
     <div
       className="admin-scroll-dark fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-10 animate-pop-in"
       style={{ contain: "layout paint" }}
     >
-      {/*
-       * A plain opaque card, not `.glass-panel` — that class's translucent
-       * fill is meant to sit over photographic/blob backgrounds elsewhere on
-       * the site, and layered on top of this overlay's own blurred backdrop
-       * it doubled up into the uneven, slightly muddy panel seen in
-       * screenshots. A solid surface with the same border/elevation tokens
-       * reads as a clean, deliberate sheet instead.
-       */}
       <div className={`animate-pop-in relative w-full overflow-hidden rounded-3xl border border-hairline-strong bg-background p-6 shadow-[var(--elev-3)] sm:p-8 ${maxWidth}`}>
         <div className="tech-grid-fine pointer-events-none absolute inset-0 opacity-[0.25]" aria-hidden="true" />
         <div className="relative mb-5 flex items-center justify-between gap-4">
