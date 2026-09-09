@@ -76,11 +76,13 @@ export default function VerificationPolicySection({ withAuth }: { withAuth: Retu
     setSaved(true);
   }
 
-  // Both signup and checkout can independently ask for "phone" or "both" — but a self-signup
-  // account blocked from logging in by a phone requirement currently has no unauthenticated way
-  // to complete that verification (PhoneVerifyView requires being logged in already). Flagging
-  // this in the UI itself, not just a code comment, so an admin doesn't turn this on and only
-  // find out it locks people out from a support ticket.
+  // Both signup and checkout can independently ask for "phone" or "both". The lockout this used
+  // to warn about — an account blocked from login by a phone requirement having no unauthenticated
+  // way to complete it — is fixed now (services.login_with_verified_phone marks is_phone_verified
+  // itself, via the already-unauthenticated /auth/otp/phone/login/ endpoint). What's left is
+  // narrower: that path only works for an account that already has *some* phone number on file to
+  // match against — pairing this with "Require a phone number at signup" above is what guarantees
+  // that for every new account. Still worth surfacing, not just a code comment.
   const signupPhoneGap = policy.signup_verification === "phone" || policy.signup_verification === "both";
 
   if (loading) return <ListSkeleton rows={4} label="Loading verification policy" />;
@@ -122,15 +124,14 @@ export default function VerificationPolicySection({ withAuth }: { withAuth: Retu
               <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </SelectField>
-          {signupPhoneGap && (
-            <Alert tone="warning">
-              <span className={labelClass}>Known gap</span>
-              <p className="mt-1 text-sm normal-case tracking-normal text-amber-800">
-                Phone verification has no unauthenticated path yet — an account blocked from login by this setting
-                currently has no way to complete phone verification and log in (see{" "}
-                <code className="rounded bg-amber-100 px-1 py-0.5 text-xs">PhoneVerifyView</code>, which requires
-                already being signed in). Don&rsquo;t turn this on until that&rsquo;s closed on the backend, or people
-                will get locked out with no way back in.
+          {signupPhoneGap && !policy.phone_required_at_signup && (
+            <Alert tone="info">
+              <span className={labelClass}>Recommended pairing</span>
+              <p className="mt-1 text-sm normal-case tracking-normal text-primary/80">
+                An account can only self-unlock a phone requirement by verifying a phone number
+                it already has on file — turn on &ldquo;Require a phone number at signup&rdquo;
+                above too, so every new account actually has one to verify. Existing accounts
+                with no phone saved will still need one added by an admin before they can log in.
               </p>
             </Alert>
           )}

@@ -12,6 +12,16 @@ export function maskEmail(email: string): string {
   return `${local[0]}***@${domain}`;
 }
 
+/** Deliberately loose — one `@`, something on both sides, a dot somewhere in the domain —
+ * this only catches obvious typos client-side (a missing "@", a bare "gmail" with no TLD).
+ * It is not the source of truth for whether an address is real or deliverable; the OTP the
+ * backend sends to it is. */
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function isValidEmail(email: string): boolean {
+  return EMAIL_PATTERN.test(email.trim());
+}
+
 /** Backend gender values are lowercase choice keys ("male"/"female"/"others" — see
  * `Attendee.Gender` in apps/registration/models.py) — this is the one place that turns
  * one into display copy ("Male"/"Female"/"Others"). `null` for blank/unset, same as

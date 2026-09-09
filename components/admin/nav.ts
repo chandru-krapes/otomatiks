@@ -3,7 +3,9 @@ export type AdminSectionId =
   | "events"
   | "founder-message"
   | "perks"
+  | "payment-gateway"
   | "verification-policy"
+  | "schools"
   | "media"
   | "tickets"
   | "gallery"
@@ -52,9 +54,18 @@ export const ADMIN_NAV: AdminNavItem[] = [
   // inside the section itself (see PerksSection), the same "global content, own picker"
   // shape as founder-message above rather than the sidebar's per-event selector.
   { id: "perks", label: "What you get", needsEvent: false, group: "manage" },
+  // `adminOnly`: the backend's PATCH — and the credential fields it returns on GET — are
+  // genuinely platform-admin-only (ReadOnlyOrAdmin + a role check, not IsEventOrganizerOrAdmin).
+  // Platform-wide like founder-message/perks above, not per-event: one gateway, one set of
+  // instrument toggles and credentials serve checkout for every event.
+  { id: "payment-gateway", label: "Payment gateway", needsEvent: false, adminOnly: true, group: "manage" },
   // `adminOnly` because the backend's PATCH is genuinely platform-admin-only (ReadOnlyOrAdmin,
   // not IsEventOrganizerOrAdmin) — this isn't scoped to one event's staff to begin with.
   { id: "verification-policy", label: "Verification policy", needsEvent: false, adminOnly: true, group: "manage" },
+  // Platform-wide like the other `manage` entries above (a school isn't scoped to one event —
+  // see apps.accounts.models.User.Role.SCHOOL) and `adminOnly` for the same reason as
+  // verification-policy: only platform admins create/approve these accounts (IsAdmin).
+  { id: "schools", label: "Schools", needsEvent: false, adminOnly: true, group: "manage" },
   { id: "media", label: "Media library", needsEvent: false, adminOnly: true, group: "other" },
   { id: "tickets", label: "Tickets & promos", needsEvent: true, group: "other" },
   { id: "gallery", label: "Gallery", needsEvent: true, group: "other" },

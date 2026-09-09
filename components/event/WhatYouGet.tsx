@@ -35,23 +35,25 @@ function CarouselArrow({ direction, onClick }: { direction: "prev" | "next"; onC
   );
 }
 
-function PerkCard({ perk, index }: { perk: Perk; index: number }) {
+function PerkCard({ perk }: { perk: Perk }) {
   return (
     <article className="card group relative flex w-[78%] shrink-0 snap-start flex-col items-center gap-5 overflow-hidden rounded-3xl p-7 text-center transition-transform duration-[var(--dur-med)] ease-[var(--ease-out)] hover:-translate-y-1.5 sm:w-[260px]">
-      <div
-        className="tech-grid-fine pointer-events-none absolute -right-6 -top-6 h-24 w-24 opacity-40 transition-opacity duration-[var(--dur-med)] group-hover:opacity-70"
-        aria-hidden="true"
-      />
-      <span className="absolute left-4 top-4 font-display text-xs font-extrabold text-primary/10">
-        {String(index + 1).padStart(2, "0")}
-      </span>
-
-      <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-accent via-secondary to-secondary text-white shadow-[var(--elev-2)] transition-transform duration-[var(--dur-med)] ease-[var(--ease-out)] group-hover:scale-105">
+      {/* `bg-white` rather than a colour — most admin-uploaded perk icons (stock trophy/medal/
+      cash GIFs and the like) sit on an opaque white square, not a real transparent background.
+      A `mix-blend-multiply` trick to fake transparency was tried first, but it tints the icon's
+      own colours by whatever sits behind it, which read worse than the white box it removed.
+      Matching the badge to that white instead means the square simply disappears into it — the
+      accent ring supplies the colour this badge would otherwise have gotten from a fill. */}
+      <div className="relative flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-white shadow-[var(--elev-2)] ring-4 ring-secondary/15 transition-transform duration-[var(--dur-med)] ease-[var(--ease-out)] group-hover:scale-105">
         {perk.icon_url ? (
+          // `loading="lazy"` — admin-uploaded perk icons are frequently unoptimized stock
+          // GIFs well over 1MB apiece (see the About section's own icon swap for the same
+          // issue); this section already sits below the fold on most viewports, so there's no
+          // reason to spend that bandwidth before a visitor scrolls anywhere near it.
           // eslint-disable-next-line @next/next/no-img-element -- admin-uploaded icon URL, not an optimizable static asset.
-          <img src={perk.icon_url} alt="" className="h-11 w-11 object-contain drop-shadow-sm" />
+          <img src={perk.icon_url} alt="" loading="lazy" className="h-14 w-14 object-contain" />
         ) : (
-          <TrophyIcon className="h-9 w-9" />
+          <TrophyIcon className="h-9 w-9 text-secondary" />
         )}
       </div>
 
@@ -163,15 +165,17 @@ export default function WhatYouGet({ event }: { event: Event }) {
           onFocusCapture={() => setPaused(true)}
           onBlurCapture={() => setPaused(false)}
         >
-          <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r from-background to-transparent sm:w-16" />
+          {/* Right edge only — a matching left-edge fade sat over the very first card with
+          nothing to actually mask (the row starts at index 0), so against this section's own
+          background it just read as a stray shadow in that corner rather than a scroll hint. */}
           <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l from-background to-transparent sm:w-16" />
 
           <div
             ref={trackRef}
             className="no-scrollbar flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-px-6 px-6 py-2"
           >
-            {perks.map((perk, index) => (
-              <PerkCard key={perk.id} perk={perk} index={index} />
+            {perks.map((perk) => (
+              <PerkCard key={perk.id} perk={perk} />
             ))}
           </div>
 

@@ -12,10 +12,14 @@ import type { AuthUser } from "./types";
  * visitor can be logged into both at once without either clobbering the
  * other. "admin" is a third, independent slot for the staff console
  * (app/admin) — an admin/organizer/volunteer login has nothing to do with
- * either booking or community accounts either.
+ * either booking or community accounts either. "institute" is a fourth, for
+ * the school/institute bulk-booking portal (app/institute) — a SCHOOL-role
+ * account, logged in the same passwordless email-OTP way as a booking
+ * account but a wholly separate session slot, so a coordinator who's also
+ * booked tickets for their own kid isn't logged out of one by the other.
  */
 
-export type SessionKind = "booking" | "community" | "admin";
+export type SessionKind = "booking" | "community" | "admin" | "institute";
 
 export interface StoredSession {
   accessToken: string;

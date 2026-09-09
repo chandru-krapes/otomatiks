@@ -22,10 +22,14 @@ import type {
   MediaListResponse,
   MediaObject,
   Payment,
+  PaymentGatewayConfig,
+  PaymentGatewayConfigPayload,
   PromoCode,
   Refund,
   RegistrantSearchResult,
   ReportKind,
+  SchoolAccount,
+  SchoolAccountPayload,
   SubUnit,
   TicketSalesRow,
   VerificationPolicy,
@@ -329,6 +333,36 @@ export function updateFounderMessage(token: string, payload: FounderMessagePaylo
 export const getVerificationPolicy = (token: string) => get<VerificationPolicy>(`${V1}/auth/verification-policy/`, token);
 export const updateVerificationPolicy = (token: string, payload: Partial<VerificationPolicy>) =>
   patch<VerificationPolicy>(`${V1}/auth/verification-policy/`, token, payload);
+
+/* -- apps/accounts: schools (institute portal) ------------------------------ */
+
+/** Every SCHOOL-role account, newest first — the "Schools" admin section's table. Pass
+ * `accountStatus` to narrow to just `"pending"` (awaiting approval) or `"approved"`. */
+export const listSchools = (token: string, accountStatus?: SchoolAccount["account_status"]) =>
+  get<SchoolAccount[]>(`${V1}/accounts/schools/${accountStatus ? `?status=${accountStatus}` : ""}`, token);
+
+/** Creates a PENDING school account with no password — see the "Schools" section's create form
+ * and the backend's `SchoolAccountCreateSerializer`. */
+export const createSchool = (token: string, payload: SchoolAccountPayload) =>
+  post<SchoolAccount>(`${V1}/accounts/schools/`, token, payload);
+
+/** Flips a PENDING school account to APPROVED, letting it log in to `/institute` (passwordless
+ * email-OTP, same as every other booking-system account) - see
+ * `apps.accounts.services.schools.approve_school_account`. */
+export const approveSchool = (token: string, schoolId: number | string) =>
+  post<SchoolAccount>(`${V1}/accounts/schools/${schoolId}/approve/`, token);
+
+/* -- apps/payments: gateway config ------------------------------------------ */
+
+/** The shared platform-wide `PaymentGatewayConfig` singleton (see `PaymentGatewayConfig` in
+ * lib/adminTypes.ts) — which gateway checkout uses and which instruments it offers, not scoped
+ * to any event, same "one record, no id in the URL" shape as `getFounderMessage` above. An
+ * admin's own token gets the `credentials` block back (masked — never the real secret); a
+ * non-admin caller would get the public shape with no `credentials` key at all, though nothing
+ * in the admin console actually calls this unauthenticated. */
+export const getPaymentGatewayConfig = (token: string) => get<PaymentGatewayConfig>(`${V1}/payments/gateway-config/`, token);
+export const updatePaymentGatewayConfig = (token: string, payload: PaymentGatewayConfigPayload) =>
+  patch<PaymentGatewayConfig>(`${V1}/payments/gateway-config/`, token, payload);
 
 export const publishEvent = (token: string, eventId: number | string) => post<Event>(`${V1}/events/${eventId}/publish/`, token);
 export const duplicateEvent = (token: string, eventId: number | string) => post<Event>(`${V1}/events/${eventId}/duplicate/`, token);

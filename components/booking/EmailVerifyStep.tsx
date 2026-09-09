@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import type { AuthTokens, AuthUser } from "@/lib/types";
 import { requestCheckoutOtp, verifyCheckoutOtp } from "@/lib/api";
-import { maskEmail } from "@/lib/format";
+import { isValidEmail, maskEmail } from "@/lib/format";
 import { TextField, labelClass } from "@/components/ui/Field";
 import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
@@ -24,13 +24,13 @@ function CheckIcon() {
 export default function EmailVerifyStep({ onVerified }: { onVerified: (auth: AuthTokens & { user: AuthUser }) => void }) {
   const [phase, setPhase] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
   const [code, setCode] = useState("");
 
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [resentNotice, setResentNotice] = useState(false);
 
   const [cooldown, setCooldown] = useState(0);
@@ -59,7 +59,10 @@ export default function EmailVerifyStep({ onVerified }: { onVerified: (auth: Aut
   async function requestCode() {
     setError(null);
     try {
-      const result = await requestCheckoutOtp({ email: email.trim(), full_name: fullName.trim() });
+      // `full_name` is best-effort account-creation seeding only (see CheckoutOtpRequestPayload)
+      // — the backend falls back to the email's local part when it's blank, and "Your details"
+      // (step 2) collects the real name right after this step anyway.
+      const result = await requestCheckoutOtp({ email: email.trim(), full_name: "" });
       if (!result.ok) {
         console.warn("checkout/otp/request failed:", result.status, result.message);
         setError(result.message);
@@ -78,6 +81,12 @@ export default function EmailVerifyStep({ onVerified }: { onVerified: (auth: Aut
 
   async function handleSendCode(event: FormEvent) {
     event.preventDefault();
+    const trimmed = email.trim();
+    if (!isValidEmail(trimmed)) {
+      setEmailError("Enter a valid email address.");
+      return;
+    }
+    setEmailError(null);
     setSending(true);
     try {
       await requestCode();
@@ -132,25 +141,23 @@ export default function EmailVerifyStep({ onVerified }: { onVerified: (auth: Aut
         <p className="text-sm leading-relaxed text-muted">
           No password needed — we&rsquo;ll email you a one-time code to verify it&rsquo;s really you.
         </p>
-        <div className="grid gap-5 sm:grid-cols-2">
-          <TextField
-            label="Full name"
-            required
-            autoComplete="name"
-            value={fullName}
-            onChange={(event) => setFullName(event.target.value)}
-            placeholder="Jane Doe"
-          />
-          <TextField
-            label="Email"
-            required
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="jane@email.com"
-          />
-        </div>
+        <TextField
+          label="Email"
+          required
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(event) => {
+            setEmail(event.target.value);
+            if (emailError) setEmailError(null);
+          }}
+          onBlur={() => {
+            if (email.trim() && !isValidEmail(email)) setEmailError("Enter a valid email address.");
+          }}
+          error={emailError ?? undefined}
+          placeholder="jane@email.com"
+          fieldClassName="max-w-xs"
+        />
         {error && (
           <Alert tone="error" emphasize>
             {error}

@@ -1,7 +1,7 @@
 "use client";
 
-import { Children, isValidElement, useMemo } from "react";
-import type { ReactNode } from "react";
+import { Children, isValidElement, useEffect, useMemo, useRef, useState } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import * as RadixSelect from "@radix-ui/react-select";
 import { labelClass } from "@/components/ui/Field";
 
@@ -74,6 +74,15 @@ function CheckIcon() {
   );
 }
 
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-muted" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <path d="m20 20-4.3-4.3" />
+    </svg>
+  );
+}
+
 const TRIGGER_VARIANTS = {
   light:
     "border-primary/15 bg-white text-foreground hover:border-primary/30 focus:border-secondary focus:ring-4 focus:ring-secondary/12 data-[state=open]:border-secondary data-[state=open]:ring-4 data-[state=open]:ring-secondary/12 data-[placeholder]:text-muted/60 disabled:cursor-not-allowed disabled:bg-primary/4 disabled:text-muted",
@@ -91,6 +100,8 @@ export function Select({
   required,
   name,
   variant = "light",
+  searchable = false,
+  searchPlaceholder = "Type to filter…",
   "aria-label": ariaLabel,
 }: {
   value: string;
@@ -99,6 +110,11 @@ export function Select({
   className?: string;
   placeholder?: string;
   disabled?: boolean;
+  /** Adds a text filter at the top of the panel — for a long, alphabetical option list (every
+   * school, every district, …) where scrolling to find one by eye is the slow way to use this
+   * control. Filters client-side against each option's own label. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
   /** Forwarded to Radix's `Select.Root` (real bubble-input validation), plus `aria-required` on
    * the trigger. Not a hard guarantee on its own here — an explicit `<option value="">` (the
    * "Select…" placeholder item some call sites add so the resting label reads right; see that
@@ -122,6 +138,49 @@ export function Select({
   // entirely, so the trigger shows the right text before the panel has ever been opened.
   const selectedLabel = options.find((option) => option.value === radixValue)?.label;
 
+  // Panel open state is tracked here (rather than left to Radix's own uncontrolled default)
+  // purely so `searchable` can reset the filter text on close and grab focus on open — see
+  // the search `<input>` below.
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  const filteredOptions = useMemo(() => {
+    if (!searchable || !query.trim()) return options;
+    const needle = query.trim().toLowerCase();
+    return options.filter((option) => option.label.toLowerCase().includes(needle));
+  }, [options, query, searchable]);
+
+  /**
+   * Radix's own built-in "type a letter, jump to the matching item" search runs on every
+   * keystroke inside an open panel, and reassigns DOM focus onto the item it jumps to — which,
+   * once this filter box exists, stole focus back out of it after every single character (only
+   * the first ever landed; every keystroke after was fielded by whatever item Radix's own
+   * search had just focused instead, not this input). Radix composes a consumer-supplied
+   * `onKeyDown` on `Content` *ahead of* that internal handler and skips its own handling once
+   * `preventDefault()` has been called — the documented escape hatch for exactly this — so
+   * intercepting printable keys here and applying them to `query` ourselves (character keys
+   * and Backspace only; Escape/Arrow/Enter are left alone so closing and keyboard-navigating
+   * the still-open, already-filtered list keep working) avoids that internal handler, and the
+   * focus steal, entirely. */
+  function handleContentKeyDown(event: KeyboardEvent) {
+    if (!searchable) return;
+    if (event.key === "Backspace") {
+      event.preventDefault();
+      setQuery((current) => current.slice(0, -1));
+    } else if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      setQuery((current) => current + event.key);
+    }
+  }
+
+  // Radix moves focus onto the panel itself (typically the selected/first item) the moment it
+  // opens — a `requestAnimationFrame` fires just after that so this steal actually wins,
+  // landing the cursor in the filter box instead of on an item.
+  useEffect(() => {
+    if (searchable && open) requestAnimationFrame(() => searchRef.current?.focus());
+  }, [searchable, open]);
+
   return (
     <RadixSelect.Root
       value={radixValue}
@@ -129,6 +188,18 @@ export function Select({
       disabled={disabled}
       required={required}
       name={name}
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next) {
+          // Radix moves focus onto the panel itself (typically the selected/first item) the
+          // moment it opens; a `requestAnimationFrame` fires just after that so this steal
+          // actually wins, landing the cursor in the filter box instead of on an item.
+          if (searchable) requestAnimationFrame(() => searchRef.current?.focus());
+        } else {
+          setQuery("");
+        }
+      }}
     >
       <RadixSelect.Trigger
         aria-label={ariaLabel}
@@ -150,6 +221,7 @@ export function Select({
         <RadixSelect.Content
           position="popper"
           sideOffset={6}
+          onKeyDown={handleContentKeyDown}
           // `w-max` (bounded below by the trigger's own width, above by a cap so one very long
           // label can't stretch the panel edge-to-edge) instead of pinning to the trigger's
           // width outright — the old fixed width forced every option's label to wrap onto
@@ -158,8 +230,30 @@ export function Select({
           // Radix's own collision handling still keeps it from overflowing the viewport.
           className="admin-scroll-light z-[70] max-h-72 w-max min-w-[var(--radix-select-trigger-width)] max-w-[26rem] overflow-y-auto rounded-2xl border border-hairline-strong bg-white p-1.5 shadow-[var(--elev-3)] animate-pop-in"
         >
+          {searchable && (
+            // `sticky` (not a plain flow element above `Viewport`) so it stays pinned to the
+            // panel's top edge as the option list scrolls beneath it, rather than scrolling
+            // away with everything else — `Content` above is the actual scroll container.
+            <div className="sticky top-0 z-10 -mx-1.5 -mt-1.5 mb-1.5 flex items-center gap-2 border-b border-hairline bg-white px-3 py-2">
+              <SearchIcon />
+              <input
+                ref={searchRef}
+                type="text"
+                value={query}
+                // `handleContentKeyDown` above (bubbled up from here) is what actually owns
+                // typing — this only needs to catch anything that arrives some other way
+                // (paste, an IME composing text, autofill).
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={searchPlaceholder}
+                className="w-full min-w-[10rem] bg-transparent text-sm text-foreground outline-none placeholder:text-muted/60"
+              />
+            </div>
+          )}
           <RadixSelect.Viewport>
-            {options.map((option) => (
+            {searchable && filteredOptions.length === 0 && (
+              <p className="px-3 py-4 text-center text-sm text-muted">No matches for &ldquo;{query}&rdquo;.</p>
+            )}
+            {filteredOptions.map((option) => (
               <RadixSelect.Item
                 key={option.value}
                 value={option.value}
@@ -203,6 +297,8 @@ export function SelectField({
   disabled?: boolean;
   required?: boolean;
   name?: string;
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }) {
   return (
     <label className={`flex flex-col gap-1.5 ${fieldClassName ?? ""}`}>

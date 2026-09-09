@@ -5,19 +5,19 @@ import type { FormEvent } from "react";
 import type { ConfirmationResult } from "firebase/auth";
 import { signInWithPhoneNumber } from "firebase/auth";
 import type { AuthTokens, AuthUser } from "@/lib/types";
-import { verifyCheckoutPhone } from "@/lib/api";
+import { verifyPhoneLoginOtp } from "@/lib/api";
 import { FirebaseNotConfiguredError, RecaptchaVerifier, getFirebaseAuth } from "@/lib/firebase";
 import { TextField, labelClass } from "@/components/ui/Field";
 import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
-import OtpInput from "./OtpInput";
+import OtpInput from "@/components/booking/OtpInput";
 
 const RESEND_COOLDOWN_SECONDS = 30;
-const RECAPTCHA_CONTAINER_ID = "checkout-phone-recaptcha";
+const RECAPTCHA_CONTAINER_ID = "login-phone-recaptcha";
 
 function CheckIcon() {
   return (
-    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="m5 12.5 4.5 4.5L19 7.5" />
     </svg>
   );
@@ -39,24 +39,18 @@ function firebaseErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Something went wrong. Please try again.";
 }
 
-export default function PhoneVerifyStep({
-  onVerified,
-  attachToAccessToken,
-  fullNameHint,
-}: {
-  onVerified: (auth: AuthTokens & { user: AuthUser }) => void;
-  /** Set only for the second leg of a `VerificationPolicy.checkout_verification === "both"` flow
-   * — the access token email verification just issued. Passing it tells the backend to attach
-   * this phone number to that same account instead of resolving/creating a separate one (see
-   * lib/api.ts's verifyCheckoutPhone and CheckoutVerificationStep). */
-  attachToAccessToken?: string;
-  /** Pre-fills the name field and hides it when already known (the "both" flow's phone leg runs
-   * after email verification already collected it) — asking again would look like a mistake. */
-  fullNameHint?: string;
-}) {
+/**
+ * `/login`'s phone-based counterpart to the page's default email-OTP flow — shown instead of (or
+ * alongside, as a toggle) email when `VerificationPolicy.signup_verification` makes phone the
+ * (or an) accepted login method. See BookingLoginPage and lib/useVerificationPolicy.
+ *
+ * Unlike components/booking/PhoneVerifyStep (checkout), this never creates an account — only an
+ * existing phone-verified one can log in this way (services.login_with_verified_phone on the
+ * backend), so there's no full-name field to collect.
+ */
+export default function PhoneLoginPanel({ onLoggedIn }: { onLoggedIn: (auth: AuthTokens & { user: AuthUser }) => void }) {
   const [phase, setPhase] = useState<"phone" | "code">("phone");
   const [phone, setPhone] = useState("");
-  const [fullName, setFullName] = useState(fullNameHint ?? "");
   const [code, setCode] = useState("");
 
   const [sending, setSending] = useState(false);
@@ -158,15 +152,15 @@ export default function PhoneVerifyStep({
       const idToken = await credential.user.getIdToken();
       await getFirebaseAuth().signOut();
 
-      const result = await verifyCheckoutPhone({ id_token: idToken, full_name: fullName.trim() }, attachToAccessToken);
+      const result = await verifyPhoneLoginOtp({ id_token: idToken });
       if (!result.ok) {
-        console.warn("checkout/phone/verify failed:", result.status, result.message);
+        console.warn("auth/otp/phone/login failed:", result.status, result.message);
         setError(result.message);
         return;
       }
-      onVerified(result.data);
+      onLoggedIn(result.data);
     } catch (err) {
-      console.warn("Phone code verification failed:", err);
+      console.warn("Phone login code verification failed:", err);
       setError(firebaseErrorMessage(err));
     } finally {
       setVerifying(false);
@@ -183,71 +177,82 @@ export default function PhoneVerifyStep({
   return (
     <>
       {phase === "phone" ? (
-        <form onSubmit={handleSendCode} className="flex flex-col gap-5">
-          <p className="text-sm leading-relaxed text-muted">
-            No password needed — we&rsquo;ll text you a one-time code to verify it&rsquo;s really you.
-          </p>
-          <div className={`grid gap-5 ${fullNameHint ? "" : "sm:grid-cols-2"}`}>
-            {!fullNameHint && (
-              <TextField
-                label="Full name"
-                required
-                autoComplete="name"
-                value={fullName}
-                onChange={(event) => setFullName(event.target.value)}
-                placeholder="Jane Doe"
-              />
-            )}
-            <TextField
-              label="Phone"
-              required
-              type="tel"
-              autoComplete="tel"
-              value={phone}
-              onChange={(event) => setPhone(event.target.value)}
-              placeholder="+91 90000 00000"
-            />
+        <form onSubmit={handleSendCode} className="relative flex w-full flex-col gap-5">
+          <div className="text-center">
+            <h2 className="font-display text-xl font-bold text-primary">Welcome back</h2>
+            <p className="mt-1.5 text-sm leading-relaxed text-muted">
+              No password needed — enter your phone number and we&rsquo;ll text you a one-time code to log in.
+            </p>
           </div>
+
+          <TextField
+            label="Phone"
+            required
+            type="tel"
+            autoComplete="tel"
+            value={phone}
+            onChange={(event) => setPhone(event.target.value)}
+            placeholder="+91 90000 00000"
+          />
+
           {error && (
             <Alert tone="error" emphasize>
               {error}
             </Alert>
           )}
-          <Button type="submit" loading={sending} loadingLabel="Sending code…" className="w-fit">
-            Send verification code
+
+          <Button type="submit" variant="primary" size="lg" loading={sending} loadingLabel="Sending code…" className="w-full">
+            Send login code
           </Button>
         </form>
       ) : (
-        <form onSubmit={handleVerifySubmit} className="flex flex-col gap-5">
-          <p className="text-sm leading-relaxed text-muted">
-            We sent a 6-digit code to <span className="font-semibold text-primary">{toE164(phone) ?? phone}</span>. Enter it
-            below to continue.
-          </p>
+        <form onSubmit={handleVerifySubmit} className="relative flex w-full flex-col items-center gap-5">
+          <div className="text-center">
+            <h2 className="font-display text-xl font-bold text-primary">Enter your code</h2>
+            <p className="mt-1.5 text-sm leading-relaxed text-muted">
+              We sent a 6-digit code to <span className="font-semibold text-primary">{toE164(phone) ?? phone}</span>.
+            </p>
+          </div>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col items-center gap-2">
             <span className={labelClass}>Verification code</span>
             <OtpInput value={code} onChange={setCode} onComplete={verifyCode} disabled={verifying} error={Boolean(error)} />
           </div>
 
           {error && (
-            <Alert tone="error" emphasize>
+            <Alert tone="error" emphasize className="w-full">
               {error}
             </Alert>
           )}
-          {resentNotice && !error && <Alert tone="success">New code sent.</Alert>}
+          {resentNotice && !error && (
+            <Alert tone="success" className="w-full">
+              New code sent.
+            </Alert>
+          )}
 
-          <div className="flex flex-wrap items-center gap-4">
-            <Button type="submit" loading={verifying} loadingLabel="Verifying…" disabled={code.length < 6} className="w-fit" icon={code.length === 6 && !verifying ? <CheckIcon /> : undefined}>
-              Verify code
-            </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            loading={verifying}
+            loadingLabel="Verifying…"
+            disabled={code.length < 6}
+            className="w-full"
+            icon={code.length === 6 && !verifying ? <CheckIcon /> : undefined}
+          >
+            Verify and log in
+          </Button>
+
+          <div className="flex items-center gap-4">
             <button
               type="button"
               onClick={handleResend}
               disabled={cooldown > 0 || resending}
-              className="focus-ring press rounded-md text-xs font-semibold text-secondary transition-colors hover:text-primary disabled:cursor-not-allowed disabled:text-muted disabled:no-underline"
+              className="focus-ring press rounded-md text-xs font-semibold text-secondary transition-colors hover:text-primary disabled:cursor-not-allowed disabled:text-muted"
             >
               {resending ? "Resending…" : cooldownLabel}
             </button>
+            <span className="h-3 w-px bg-primary/15" aria-hidden="true" />
             <button
               type="button"
               onClick={() => {

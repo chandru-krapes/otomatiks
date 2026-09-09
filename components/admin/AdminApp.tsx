@@ -15,7 +15,9 @@ import OverviewSection from "./sections/OverviewSection";
 import EventsSection from "./sections/EventsSection";
 import FounderMessageSection from "./sections/FounderMessageSection";
 import PerksSection from "./sections/PerksSection";
+import PaymentGatewaySection from "./sections/PaymentGatewaySection";
 import VerificationPolicySection from "./sections/VerificationPolicySection";
+import SchoolsSection from "./sections/SchoolsSection";
 import MediaLibrarySection from "./sections/MediaLibrarySection";
 import GallerySection from "./sections/GallerySection";
 import SpeakersSection from "./sections/SpeakersSection";
@@ -121,8 +123,12 @@ export default function AdminApp() {
         <FounderMessageSection withAuth={withAuth} />
       ) : section === "perks" ? (
         <PerksSection events={events} withAuth={withAuth} />
+      ) : section === "payment-gateway" ? (
+        <PaymentGatewaySection withAuth={withAuth} />
       ) : section === "verification-policy" ? (
         <VerificationPolicySection withAuth={withAuth} />
+      ) : section === "schools" ? (
+        <SchoolsSection withAuth={withAuth} />
       ) : !selectedEvent ? (
         <EmptyState title="No event selected" description="Pick an event from the sidebar, or create one under Events." />
       ) : section === "overview" ? (

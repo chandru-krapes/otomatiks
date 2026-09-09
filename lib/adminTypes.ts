@@ -368,3 +368,72 @@ export interface VerificationPolicy {
   signup_verification: VerificationRequirement;
   checkout_verification: VerificationRequirement;
 }
+
+/**
+ * `GET/POST /api/v1/accounts/schools/` — an admin-created school/institute account (see the
+ * "Schools" admin section). `account_status` starts `"pending"`; approving one
+ * (`POST /accounts/schools/{id}/approve/`) flips it to `"approved"`, which is what actually
+ * lets it log in to `/institute` — the same passwordless email-OTP flow every other
+ * booking-system account uses, not a password invite (see the backend's
+ * `apps.accounts.services.schools.approve_school_account`).
+ */
+export interface SchoolAccount {
+  id: number;
+  email: string;
+  full_name: string;
+  phone: string;
+  role: string;
+  account_status: "pending" | "approved";
+  is_email_verified: boolean;
+  is_phone_verified: boolean;
+}
+
+/** `POST /api/v1/accounts/schools/` request body. */
+export interface SchoolAccountPayload {
+  email: string;
+  full_name: string;
+  phone?: string;
+}
+
+/** Which payment gateway checkout uses platform-wide, and which instruments it advertises to
+ * buyers — one shared row (see the backend's `PaymentGatewayConfig.get_solo()`), not scoped to
+ * any one event. `credentials` only comes back for an admin caller (masked — see
+ * `PaymentGatewayCredentialStatus`); a non-admin's GET has no `credentials` key at all. */
+export type PaymentGateway = "zohopay" | "razorpay";
+
+export interface PaymentGatewayCredentialStatus {
+  zohopay_account_id: string | null;
+  zohopay_client_id: string | null;
+  zohopay_client_secret_configured: boolean;
+  zohopay_api_domain: string | null;
+  razorpay_key_id: string | null;
+  razorpay_key_secret_configured: boolean;
+}
+
+export interface PaymentGatewayConfig {
+  active_gateway: PaymentGateway;
+  accept_cards: boolean;
+  accept_upi: boolean;
+  accept_netbanking: boolean;
+  accept_manual: boolean;
+  /** Admin-only — absent from a non-admin caller's GET. */
+  credentials?: PaymentGatewayCredentialStatus;
+}
+
+/** PATCH payload — every credential field is write-only on the backend (never echoed back, see
+ * `PaymentGatewayCredentialStatus`): omit a field to leave that stored value untouched, or send
+ * `""` to explicitly clear it. Never send a value read from `credentials` back as one of these —
+ * that's a masked display string, not the real secret. */
+export interface PaymentGatewayConfigPayload {
+  active_gateway?: PaymentGateway;
+  accept_cards?: boolean;
+  accept_upi?: boolean;
+  accept_netbanking?: boolean;
+  accept_manual?: boolean;
+  zohopay_account_id?: string;
+  zohopay_client_id?: string;
+  zohopay_client_secret?: string;
+  zohopay_api_domain?: string;
+  razorpay_key_id?: string;
+  razorpay_key_secret?: string;
+}

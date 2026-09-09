@@ -7,11 +7,15 @@ import type {
   CheckoutOtpRequestPayload,
   CheckoutOtpVerifyPayload,
   CheckoutPhoneVerifyPayload,
+  CheckoutSkipVerificationPayload,
   ChildClaimPayload,
   CommunityProfileResponse,
   Event,
   EventListResponse,
   FunnelTrackPayload,
+  InstituteBulkUploadResult,
+  InstituteStudent,
+  InstituteStudentUpdatePayload,
   LoginOtpRequestPayload,
   LoginOtpVerifyPayload,
   LoginPayload,
@@ -19,6 +23,7 @@ import type {
   PasswordResetConfirmPayload,
   PasswordResetRequestPayload,
   PaymentOrderResponse,
+  PhoneLoginOtpVerifyPayload,
   PromoCodeValidatePayload,
   PromoCodeValidateResponse,
   RegisterPayload,
@@ -27,6 +32,7 @@ import type {
   Testimonial,
   TestimonialInput,
   TicketType,
+  VerificationPolicy,
   VerifyEmailPayload,
   ZohoPayMockSimulatePayload,
   ZohoPayMockSimulateResponse,
@@ -86,6 +92,20 @@ export const NGROK_SKIP_HEADER: Record<string, string> = /(^|\.)ngrok(-free)?\.(
 // in case the API paginates and a `next` link loops back on itself.
 const MAX_PAGES = 10;
 
+/**
+ * Public, unauthenticated reads (event lookup, testimonials, the published-events
+ * list) go through here. These used to be `cache: "no-store"`, so *every* page
+ * view re-hit the live backend — including the free-tier ngrok tunnel most local
+ * dev/staging setups point at, which adds several hundred ms of its own on top of
+ * the request. A short revalidation window means repeat visitors within the same
+ * `PUBLIC_DATA_REVALIDATE_SECONDS` window get served from Next's data cache
+ * instead of waiting on a fresh round trip, while still picking up edits (a new
+ * banner, a status change) within half a minute — plenty fresh for content that
+ * isn't per-user. Authenticated/personal reads (`getJson` below) are untouched:
+ * those must stay live.
+ */
+const PUBLIC_DATA_REVALIDATE_SECONDS = 30;
+
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
     const response = await fetch(url, {
@@ -93,7 +113,7 @@ async function fetchJson<T>(url: string): Promise<T | null> {
         "Accept": "application/json",
         ...NGROK_SKIP_HEADER,
       },
-      cache: "no-store",
+      next: { revalidate: PUBLIC_DATA_REVALIDATE_SECONDS },
     });
     if (!response.ok) return null;
     return (await response.json()) as T;
@@ -477,11 +497,54 @@ export async function verifyCheckoutOtp(
  * the SMS and confirmed the code itself (see lib/firebase.ts) — there's no separate "request a
  * code" step on this backend for phone. Same tokens+user response shape as `verifyCheckoutOtp`,
  * whether this verified a brand-new account or logged an existing one back in.
+ *
+ * `attachToAccessToken` is only passed for the `VerificationPolicy.checkout_verification ===
+ * "both"` flow, as the *second* leg after email verification already ran — sending the just-issued
+ * access token here is what tells the backend to attach this phone to that same account instead
+ * of resolving/creating a separate one keyed by phone number (see CheckoutVerificationStep).
  */
 export async function verifyCheckoutPhone(
   payload: CheckoutPhoneVerifyPayload,
+  attachToAccessToken?: string,
 ): Promise<ApiResult<AuthTokens & { user: AuthUser }>> {
-  return postJson<AuthTokens & { user: AuthUser }>(`${AUTH_ENDPOINT}checkout/phone/verify/`, payload);
+  return postJson<AuthTokens & { user: AuthUser }>(
+    `${AUTH_ENDPOINT}checkout/phone/verify/`,
+    payload,
+    attachToAccessToken ? { Authorization: `Bearer ${attachToAccessToken}` } : {},
+  );
+}
+
+/**
+ * `POST /api/v1/auth/checkout/skip/` — the no-OTP checkout bootstrap, called instead of the
+ * email/phone flows above only when `getVerificationPolicy()` resolves `checkout_verification`
+ * to `"none"`. The backend re-checks the live policy itself before honoring this, so it's not a
+ * way to skip a requirement that's actually configured — see CheckoutSkipVerificationView.
+ */
+export async function checkoutSkipVerification(
+  payload: CheckoutSkipVerificationPayload,
+): Promise<ApiResult<AuthTokens & { user: AuthUser }>> {
+  return postJson<AuthTokens & { user: AuthUser }>(`${AUTH_ENDPOINT}checkout/skip/`, payload);
+}
+
+/** `POST /api/v1/auth/otp/phone/login/` — phone counterpart to `verifyLoginOtp`, for the
+ * standalone `/login` page when `VerificationPolicy.signup_verification` makes phone the (or an)
+ * accepted method. Only signs an *existing* phone-verified account in — never creates one. */
+export async function verifyPhoneLoginOtp(
+  payload: PhoneLoginOtpVerifyPayload,
+): Promise<ApiResult<AuthTokens & { user: AuthUser }>> {
+  return postJson<AuthTokens & { user: AuthUser }>(`${AUTH_ENDPOINT}otp/phone/login/`, payload);
+}
+
+/**
+ * `GET /api/v1/auth/verification-policy/` — public, platform-wide rules for what a self-signup,
+ * login, or checkout account must verify. `/login` and `/checkout` both fetch this once on mount
+ * to decide which verification step(s) to show — or whether to show one at all — instead of
+ * hard-coding an email-only OTP flow. Best-effort like the other decorative/config reads: `null`
+ * on failure, and callers should fall back to the historical default ("none" everywhere) rather
+ * than blocking the page on it.
+ */
+export async function getVerificationPolicy(): Promise<VerificationPolicy | null> {
+  return fetchJson<VerificationPolicy>(`${AUTH_ENDPOINT}verification-policy/`);
 }
 
 /**
@@ -682,6 +745,129 @@ export async function claimCommunityAccount(
     `${API_BASE_URL}/api/v1/community/claim/${encodeURIComponent(token)}/`,
     payload,
   );
+}
+
+/**
+ * `GET /api/v1/events/{event_id}/ticket-types/` — public, same endpoint `getEventBySlug` already
+ * calls internally to enrich the event page. Exposed here too for the institute bulk-booking
+ * portal (components/account/InstituteDashboard), which needs a specific event's ticket types on
+ * their own (to populate the "which competition are you booking" picker) without re-resolving a
+ * whole event by slug.
+ */
+export async function getEventTicketTypes(eventId: number | string): Promise<TicketType[]> {
+  const data = await fetchJson<TicketType[] | PaginatedResponse<TicketType>>(`${EVENTS_ENDPOINT}${eventId}/ticket-types/`);
+  if (!data) return [];
+  return Array.isArray(data) ? data : data.results;
+}
+
+/* -- Institute/school bulk-booking portal (/institute) --------------------
+ * An approved SCHOOL account (apps.accounts.permissions.IsApprovedSchool) downloading the Excel
+ * template, uploading it back, and managing the resulting per-student bookings. Login itself
+ * reuses requestLoginOtp/verifyLoginOtp above unchanged (the SCHOOL role already works there —
+ * see apps.accounts.services.constants.STAFF_ROLES) - only these endpoints are new.
+ */
+
+const INSTITUTE_ENDPOINT = `${API_BASE_URL}/api/v1/institute/`;
+
+/**
+ * `GET /api/v1/institute/bulk-upload/template/` — returns the raw .xlsx bytes as a `Blob` rather
+ * than going through `getJson`/`ApiResult`, since this is a file download, not a JSON read. The
+ * caller (InstituteDashboard) turns the blob into an `<a download>` click; browsers block that on
+ * a plain `<a href>` to an authenticated endpoint (no way to attach the Bearer token to a bare
+ * navigation), so the fetch-then-blob-URL dance is required, not just convenient.
+ */
+export async function downloadInstituteBulkTemplate(accessToken: string): Promise<Blob | null> {
+  try {
+    const response = await fetch(`${INSTITUTE_ENDPOINT}bulk-upload/template/`, {
+      headers: { Authorization: `Bearer ${accessToken}`, ...NGROK_SKIP_HEADER },
+    });
+    if (!response.ok) return null;
+    return await response.blob();
+  } catch (error) {
+    console.warn("Failed to download the bulk-upload template:", error);
+    return null;
+  }
+}
+
+/**
+ * `POST /api/v1/institute/events/{event_id}/bulk-upload/` — multipart `file` (the filled
+ * template) + `ticket_type_id`. Always resolves `ok: true` for a well-formed request even when
+ * some rows didn't import (`data.errors`) — that's the backend's own per-row reporting, not a
+ * request failure; only a genuinely bad file (`code: "invalid_file"`) or bad `ticket_type_id`
+ * comes back as `ok: false`.
+ */
+export async function uploadInstituteBulk(
+  eventId: number | string,
+  ticketTypeId: number | string,
+  file: File,
+  accessToken: string,
+): Promise<ApiResult<InstituteBulkUploadResult>> {
+  const formData = new FormData();
+  formData.append("ticket_type_id", String(ticketTypeId));
+  formData.append("file", file);
+
+  let response: Response;
+  try {
+    response = await fetch(`${INSTITUTE_ENDPOINT}events/${eventId}/bulk-upload/`, {
+      method: "POST",
+      headers: { Accept: "application/json", Authorization: `Bearer ${accessToken}`, ...NGROK_SKIP_HEADER },
+      body: formData,
+    });
+  } catch (error) {
+    console.warn("Failed to upload bulk students:", error);
+    return { ok: false, status: null, message: "Couldn't reach the server. Check your connection and try again." };
+  }
+
+  let body: unknown = null;
+  try {
+    body = await response.json();
+  } catch {
+    // No/invalid JSON body — fall through with body left null.
+  }
+  if (!response.ok) return parseErrorResult(response.status, body);
+  return { ok: true, data: body as InstituteBulkUploadResult };
+}
+
+/** `GET /api/v1/institute/events/{event_id}/students/` — this institute's own imported students
+ * for one event (every ticket type, unless `ticketTypeId` narrows it), newest first. */
+export async function getInstituteStudents(
+  eventId: number | string,
+  accessToken: string,
+  ticketTypeId?: number | string,
+): Promise<ApiResult<InstituteStudent[]>> {
+  const url = new URL(`${INSTITUTE_ENDPOINT}events/${eventId}/students/`);
+  if (ticketTypeId) url.searchParams.set("ticket_type_id", String(ticketTypeId));
+  return getJson<InstituteStudent[]>(url.toString(), accessToken);
+}
+
+/** `PATCH /api/v1/institute/students/{id}/` — the dashboard's "Edit" action on one imported
+ * student's details. */
+export async function updateInstituteStudent(
+  registrationId: number | string,
+  payload: InstituteStudentUpdatePayload,
+  accessToken: string,
+): Promise<ApiResult<InstituteStudent>> {
+  return sendAuthedJson<InstituteStudent>("PATCH", `${INSTITUTE_ENDPOINT}students/${registrationId}/`, accessToken, payload);
+}
+
+/** `DELETE /api/v1/institute/students/{id}/` — the dashboard's "Remove" action. Cancels the
+ * booking (releases the ticket type's capacity) rather than hard-deleting it — see the backend's
+ * `apps.registration.services.cancel_registration`. */
+export async function removeInstituteStudent(
+  registrationId: number | string,
+  accessToken: string,
+): Promise<ApiResult<null>> {
+  return sendAuthedJson<null>("DELETE", `${INSTITUTE_ENDPOINT}students/${registrationId}/`, accessToken);
+}
+
+/** `POST /api/v1/institute/students/{id}/mark-paid/` — the dashboard's payment-status action.
+ * One-directional (no "mark pending" — see the backend's `mark_registration_paid` docstring for
+ * why), so this is only ever offered while `paid` is still `false`. */
+export async function markInstituteStudentPaid(
+  registrationId: number | string,
+  accessToken: string,
+): Promise<ApiResult<InstituteStudent>> {
+  return sendAuthedJson<InstituteStudent>("POST", `${INSTITUTE_ENDPOINT}students/${registrationId}/mark-paid/`, accessToken);
 }
 
 /**

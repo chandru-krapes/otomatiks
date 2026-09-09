@@ -5,10 +5,11 @@ import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { AuthTokens, AuthUser, BookingCreatePayload, Event, SavedStudent } from "@/lib/types";
-import { createBooking, getMyStudents } from "@/lib/api";
+import { checkoutSkipVerification, createBooking, getMyStudents } from "@/lib/api";
 import { attendeeToPayload, type PrimaryContact, type Relationship } from "@/lib/booking";
 import { rememberLastBooking } from "@/lib/lastBooking";
 import { saveSession } from "@/lib/auth";
+import { useVerificationPolicy } from "@/lib/useVerificationPolicy";
 import { useCart } from "./CartProvider";
 import CartSummaryPanel from "./CartSummaryPanel";
 import CheckoutForm from "./CheckoutForm";
@@ -33,13 +34,22 @@ function frameSubmitError(message: string, code: string | undefined): string {
 export default function CheckoutPage({ event }: { event: Event }) {
   const router = useRouter();
   const { lines, clear } = useCart();
+  const { policy } = useVerificationPolicy();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  // `useVerificationPolicy` starts out assuming "email" (the old hard-coded default) until the
+  // real policy loads, so step 1 never flashes the wrong content in the common case. If it turns
+  // out checkout requires nothing at all, there's nothing to show on step 1 for — derive the
+  // displayed step from the policy instead of `step` directly, rather than reaching for an effect
+  // to force one state to follow another. `Math.max` only ever moves it forward: nothing sets
+  // `step` back to 1 once it's past it (see CheckoutForm's StepProgress).
+  const effectiveStep: 1 | 2 | 3 = policy.checkout_verification === "none" ? (Math.max(step, 2) as 2 | 3) : step;
   const [auth, setAuth] = useState<(AuthTokens & { user: AuthUser }) | null>(null);
   const [relationship, setRelationship] = useState<Relationship>("parent");
   const [primary, setPrimary] = useState<PrimaryContact>({ name: "", email: "", phone: "" });
   const [savedStudents, setSavedStudents] = useState<SavedStudent[]>([]);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [continuingToAttendees, setContinuingToAttendees] = useState(false);
   const [promo, setPromo] = useState<AppliedPromo | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -58,12 +68,31 @@ export default function CheckoutPage({ event }: { event: Event }) {
     if (studentsResult.ok) setSavedStudents(studentsResult.data);
   }
 
-  function handleContinueToAttendees() {
+  async function handleContinueToAttendees() {
     if (!primary.name.trim() || !primary.phone.trim() || !primary.email.trim()) {
       setDetailsError("Please fill in your name, email, and phone number.");
       return;
     }
     setDetailsError(null);
+
+    // "none" never went through step 1, so there's no account yet — bootstrap one now, right
+    // before it's actually needed (booking creation still requires an authenticated request even
+    // when no verification does). The backend re-checks the live policy itself, so this can't be
+    // used to skip a requirement that's actually configured.
+    if (policy.checkout_verification === "none" && !auth) {
+      setContinuingToAttendees(true);
+      const result = await checkoutSkipVerification({ email: primary.email.trim(), full_name: primary.name.trim() });
+      setContinuingToAttendees(false);
+      if (!result.ok) {
+        setDetailsError(result.message);
+        return;
+      }
+      setAuth(result.data);
+      saveSession("booking", { accessToken: result.data.access, refreshToken: result.data.refresh, user: result.data.user });
+      const studentsResult = await getMyStudents(result.data.access);
+      if (studentsResult.ok) setSavedStudents(studentsResult.data);
+    }
+
     setStep(3);
   }
 
@@ -120,7 +149,7 @@ export default function CheckoutPage({ event }: { event: Event }) {
 
       <div className="relative z-10">
         <CartSummaryPanel
-          step={step}
+          step={effectiveStep}
           eventId={event.id}
           promo={promo}
           onApplyPromo={setPromo}
@@ -128,7 +157,7 @@ export default function CheckoutPage({ event }: { event: Event }) {
           submitting={submitting}
         />
         <MobileOrderSheet
-          step={step}
+          step={effectiveStep}
           eventId={event.id}
           promo={promo}
           onApplyPromo={setPromo}
@@ -152,18 +181,22 @@ export default function CheckoutPage({ event }: { event: Event }) {
                 Confirm Your Booking
               </h1>
               <p className="mt-2 text-sm text-muted">
-                Verify with email or phone, add your details, then who&rsquo;s attending for each ticket — one step at a time.
+                {policy.checkout_verification === "none"
+                  ? "Add your details, then who’s attending for each ticket — one step at a time."
+                  : "Verify with email or phone, add your details, then who’s attending for each ticket — one step at a time."}
               </p>
             </div>
 
             <CheckoutForm
-              step={step}
+              step={effectiveStep}
               onStepChange={setStep}
+              checkoutVerification={policy.checkout_verification}
               onVerified={handleVerified}
               relationship={relationship}
               onRelationshipChange={setRelationship}
               primary={primary}
               onPrimaryChange={setPrimary}
+              continuingToAttendees={continuingToAttendees}
               verifiedUser={auth?.user ?? null}
               detailsError={detailsError}
               onContinueToAttendees={handleContinueToAttendees}
@@ -172,8 +205,8 @@ export default function CheckoutPage({ event }: { event: Event }) {
               submitError={submitError}
             />
 
-            {step === 3 && <OtherTicketsSection event={event} />}
-            {step === 3 && <div className="h-20 sm:hidden" aria-hidden="true" />}
+            {effectiveStep === 3 && <OtherTicketsSection event={event} />}
+            {effectiveStep === 3 && <div className="h-20 sm:hidden" aria-hidden="true" />}
           </div>
         </div>
       </div>

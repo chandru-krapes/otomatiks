@@ -3,51 +3,23 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import type { AuthTokens, AuthUser } from "@/lib/types";
 import { requestLoginOtp, verifyLoginOtp } from "@/lib/api";
-import { maskEmail } from "@/lib/format";
+import { maskEmail, isValidEmail } from "@/lib/format";
 import { saveSession } from "@/lib/auth";
-import { useVerificationPolicy } from "@/lib/useVerificationPolicy";
 import AccountShell from "./AccountShell";
-import PhoneLoginPanel from "./PhoneLoginPanel";
 import OtpInput from "@/components/booking/OtpInput";
 import { TextField, labelClass } from "@/components/ui/Field";
 import Alert from "@/components/ui/Alert";
 import Button from "@/components/ui/Button";
 
-type LoginMethod = "email" | "phone";
-
-/**
- * Which login method(s) `/login` offers, driven by `VerificationPolicy.signup_verification` (the
- * same policy that gates whether an account can log in at all — see
- * apps.accounts.services.login_guards.ensure_signup_verification_met on the backend):
- *   - "phone": phone is the only thing these accounts ever verify — an account created through
- *     the phone-only checkout path has no real email to log in with (see
- *     apps.accounts.services.phone._synthetic_email_for_phone), so email login wouldn't work.
- *   - "email"/"none": unaffected — email login has always been the default here.
- *   - "either"/"both": either channel alone already proves who they are (the account's
- *     `is_email_verified`/`is_phone_verified` flags were both set back when it first verified,
- *     not re-checked per login), so both are offered as alternatives rather than requiring one
- *     specific one or asking for both again.
- */
-function loginMethodsFor(policy: ReturnType<typeof useVerificationPolicy>["policy"]): {
-  offered: readonly LoginMethod[];
-  initial: LoginMethod;
-} {
-  if (policy.signup_verification === "phone") return { offered: ["phone"], initial: "phone" };
-  if (policy.signup_verification === "either" || policy.signup_verification === "both") {
-    return { offered: ["email", "phone"], initial: "email" };
-  }
-  return { offered: ["email"], initial: "email" };
-}
-
 const RESEND_COOLDOWN_SECONDS = 30;
 
-function MailIcon() {
+function SchoolIcon() {
   return (
     <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="3" y="5" width="18" height="14" rx="2.5" />
-      <path d="m4 7 8 6 8-6" />
+      <path d="M12 3 2 8l10 5 10-5-10-5Z" />
+      <path d="M6 10.5V16c0 1 2.7 3 6 3s6-2 6-3v-5.5" />
+      <path d="M22 8v6" />
     </svg>
   );
 }
@@ -60,25 +32,21 @@ function CheckIcon() {
   );
 }
 
-export default function BookingLoginPage() {
+/**
+ * `/institute/login` — the school/institute bulk-booking portal's own sign-in, for an admin-
+ * created SCHOOL account (see components/admin/sections/SchoolsSection) once approved. Same
+ * passwordless email-OTP mechanics as BookingLoginPage (this reuses the identical
+ * requestLoginOtp/verifyLoginOtp calls — SCHOOL isn't a staff role, so the generic OTP-login
+ * endpoints already accept it), kept as its own component rather than a policy branch inside
+ * BookingLoginPage since this portal never offers a phone-login alternative or a method toggle -
+ * one flow, one role, no VerificationPolicy branching to thread through.
+ */
+export default function InstituteLoginPage() {
   const router = useRouter();
-  const { policy } = useVerificationPolicy();
-  const { offered: offeredMethods, initial: initialMethod } = loginMethodsFor(policy);
-
-  // `null` until the visitor actively picks one from the toggle below — until then, the method
-  // shown is derived from the policy every render rather than synced into state via an effect, so
-  // the *only* offered method (e.g. once a "phone"-only policy loads, replacing the initial
-  // "email" fallback) takes effect immediately without an extra render.
-  const [chosenMethod, setChosenMethod] = useState<LoginMethod | null>(null);
-  const method = chosenMethod ?? (offeredMethods.length === 1 ? offeredMethods[0] : initialMethod);
-
-  function handlePhoneLoggedIn(result: AuthTokens & { user: AuthUser }) {
-    saveSession("booking", { accessToken: result.access, refreshToken: result.refresh, user: result.user });
-    router.push("/dashboard");
-  }
 
   const [phase, setPhase] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [code, setCode] = useState("");
 
   const [sending, setSending] = useState(false);
@@ -131,6 +99,11 @@ export default function BookingLoginPage() {
 
   async function handleSendCode(formEvent: FormEvent) {
     formEvent.preventDefault();
+    if (!isValidEmail(email)) {
+      setEmailError("Enter a valid email address.");
+      return;
+    }
+    setEmailError(null);
     setSending(true);
     try {
       await requestCode();
@@ -163,8 +136,14 @@ export default function BookingLoginPage() {
         setError(result.message);
         return;
       }
-      saveSession("booking", { accessToken: result.data.access, refreshToken: result.data.refresh, user: result.data.user });
-      router.push("/dashboard");
+      if (result.data.user.role !== "school") {
+        // A genuine parent/student account typed into the wrong login page - the code itself is
+        // valid, so this only surfaces after verifying, same as any other role-mismatch.
+        setError("This email isn't registered as a school/institute account.");
+        return;
+      }
+      saveSession("institute", { accessToken: result.data.access, refreshToken: result.data.refresh, user: result.data.user });
+      router.push("/institute/dashboard");
     } catch (err) {
       console.error("auth/otp/login threw unexpectedly:", err);
       setError("Something went wrong verifying the code. Please try again.");
@@ -191,49 +170,23 @@ export default function BookingLoginPage() {
 
   return (
     <AccountShell
-      eyebrow="Booking account"
-      title="Log in to your booking account"
-      description="For parents, students, and training institutes booking event tickets."
+      eyebrow="Institute portal"
+      title="Log in to your institute account"
+      description="For schools and training institutes booking tickets in bulk."
     >
       <div className="glass-panel relative flex flex-col items-center gap-6 overflow-hidden rounded-3xl p-8 sm:p-10">
         <div className="tech-grid pointer-events-none absolute inset-0 opacity-40" aria-hidden="true" />
 
         <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-secondary/10 text-secondary">
-          <MailIcon />
+          <SchoolIcon />
         </div>
 
-        {offeredMethods.length > 1 && (
-          <div role="radiogroup" aria-label="Login method" className="relative flex flex-wrap justify-center gap-2">
-            {offeredMethods.map((option) => {
-              const selected = option === method;
-              return (
-                <button
-                  key={option}
-                  type="button"
-                  role="radio"
-                  aria-checked={selected}
-                  onClick={() => setChosenMethod(option)}
-                  className={`focus-ring press rounded-full border px-4 py-2 text-sm font-semibold capitalize transition-colors duration-[var(--dur-fast)] ${
-                    selected
-                      ? "border-secondary bg-secondary/10 text-secondary"
-                      : "border-primary/15 bg-white text-foreground hover:border-primary/30"
-                  }`}
-                >
-                  {option}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {method === "phone" ? (
-          <PhoneLoginPanel onLoggedIn={handlePhoneLoggedIn} />
-        ) : phase === "email" ? (
+        {phase === "email" ? (
           <form onSubmit={handleSendCode} className="relative flex w-full flex-col gap-5">
             <div className="text-center">
               <h2 className="font-display text-xl font-bold text-primary">Welcome back</h2>
               <p className="mt-1.5 text-sm leading-relaxed text-muted">
-                No password needed — enter your email and we&rsquo;ll send you a one-time code to log in.
+                No password needed — enter your registered email and we&rsquo;ll send you a one-time code.
               </p>
             </div>
 
@@ -243,8 +196,16 @@ export default function BookingLoginPage() {
               type="email"
               autoComplete="email"
               value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="jane@email.com"
+              onChange={(event) => {
+                setEmail(event.target.value);
+                if (emailError) setEmailError(null);
+              }}
+              onBlur={() => {
+                if (email.trim() && !isValidEmail(email)) setEmailError("Enter a valid email address.");
+              }}
+              error={emailError ?? undefined}
+              placeholder="coordinator@school.edu"
+              fieldClassName="max-w-sm"
             />
 
             {error && (
@@ -256,6 +217,10 @@ export default function BookingLoginPage() {
             <Button type="submit" variant="primary" size="lg" loading={sending} loadingLabel="Sending code…" className="w-full">
               Send login code
             </Button>
+
+            <p className="text-center text-xs text-muted">
+              Don&rsquo;t have an institute account yet? Ask the event organizer to set one up for your school.
+            </p>
           </form>
         ) : (
           <form onSubmit={handleVerifySubmit} className="relative flex w-full flex-col items-center gap-5">

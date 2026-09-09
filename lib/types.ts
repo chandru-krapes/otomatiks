@@ -135,6 +135,9 @@ export interface TicketType {
   kind?: TicketKind;
   /** Only meaningful when `kind === "team"`. */
   max_team_size?: number | null;
+  /** `kind === "individual"` counterpart to `max_team_size` — caps how many attendees one
+   * purchaser can add for this ticket type in a single booking. `null` = no per-booking limit. */
+  max_attendees_per_booking?: number | null;
   /** Same shape as `Event.gallery_items` (see `GalleryItem` below) — photos/
    * clips for this specific ticket/category, not the whole event. */
   gallery_items?: GalleryItem[];
@@ -426,6 +429,39 @@ export interface CheckoutPhoneVerifyPayload {
   full_name: string;
 }
 
+/** `POST /api/v1/auth/checkout/skip/` request body — the no-OTP checkout bootstrap used only
+ * when `VerificationPolicy.checkout_verification` is `"none"` (see getVerificationPolicy below).
+ * Same shape as `CheckoutOtpRequestPayload`, minus the code round trip: the backend re-checks the
+ * live policy itself before honoring this, so it can't be used to bypass a real requirement. */
+export interface CheckoutSkipVerificationPayload {
+  email: string;
+  full_name: string;
+}
+
+/** `POST /api/v1/auth/otp/phone/login/` request body — phone counterpart to `LoginOtpVerifyPayload`
+ * for the standalone `/login` page. Like `CheckoutPhoneVerifyPayload`, Firebase's client SDK has
+ * already sent and confirmed the SMS code by the time this is called; unlike the checkout version,
+ * this never creates an account — only an existing phone-verified account can log in this way. */
+export interface PhoneLoginOtpVerifyPayload {
+  id_token: string;
+}
+
+/**
+ * `GET /api/v1/auth/verification-policy/` response — the platform-wide, admin-editable rules for
+ * what a self-signup, login, or checkout account must verify (see
+ * components/admin/sections/VerificationPolicySection and the backend's
+ * `apps.accounts.models.VerificationPolicy`). Public and unauthenticated so both `/login` and
+ * `/checkout` can shape their verification UI *before* the visitor submits anything — show only
+ * the OTP method(s) actually required, or skip the step entirely when nothing is.
+ */
+export type VerificationRequirement = "none" | "email" | "phone" | "either" | "both";
+
+export interface VerificationPolicy {
+  phone_required_at_signup: boolean;
+  signup_verification: VerificationRequirement;
+  checkout_verification: VerificationRequirement;
+}
+
 /**
  * `GET /api/v1/my-students/` — one row per distinct Student the logged-in
  * account has ever entered as an attendee (flow.pdf "The second event").
@@ -507,6 +543,65 @@ export interface PaginatedResponse<T> {
   next: string | null;
   previous: string | null;
   results: T[];
+}
+
+/**
+ * The institute/school bulk-booking portal (`/institute`) - one row of `GET
+ * /api/v1/institute/events/{event_id}/students/`. A flattened Registration+Attendee: the bulk
+ * flow creates one Registration per student (see the backend's
+ * `apps.registration.services.institute_bulk`), not one shared registration for the whole
+ * uploaded batch, so each student's payment status and edits are independent of the rest.
+ */
+export interface InstituteStudent {
+  id: number;
+  booking_reference: string | null;
+  status: string;
+  /** `status === "confirmed"` - a convenience flag so the dashboard doesn't need to know the
+   * underlying Registration.Status values just to render a paid/pending badge. */
+  paid: boolean;
+  name: string | null;
+  grade: string | null;
+  date_of_birth: string | null;
+  gender: string | null;
+  email: string | null;
+  phone: string | null;
+  school: string | null;
+  school_address: string | null;
+  ticket_type: { id: number; name: string } | null;
+  created_at: string;
+}
+
+/** PATCH `/api/v1/institute/students/{id}/` request body - every field optional (always a
+ * partial edit), matching `InstituteStudent`'s editable columns. */
+export interface InstituteStudentUpdatePayload {
+  name?: string;
+  grade?: string;
+  date_of_birth?: string | null;
+  gender?: string;
+  email?: string;
+  phone?: string;
+  school?: string;
+  school_address?: string;
+}
+
+/** One row of a bulk-upload's per-student outcome that couldn't be imported - a missing name, an
+ * unparseable date, sold-out capacity partway through the sheet. Doesn't stop the rest of the
+ * file from importing (see `InstituteBulkUploadResult`). */
+export interface InstituteBulkUploadRowError {
+  /** 1-based row number in the uploaded sheet, matching what a spreadsheet app itself shows -
+   * row 1 is the header, so the first data row is 2. */
+  row: number;
+  message: string;
+}
+
+/** `POST /api/v1/institute/events/{event_id}/bulk-upload/` response. */
+export interface InstituteBulkUploadResult {
+  created: number;
+  /** Rows that matched a student this institute already imported for this event+ticket type
+   * (same name + date of birth) - skipped, not re-created, so re-uploading an updated sheet only
+   * adds what's genuinely new. */
+  skipped_duplicates: number;
+  errors: InstituteBulkUploadRowError[];
 }
 
 /** One row of `GET /api/v1/community/me/`'s `history` — the claimed Student's

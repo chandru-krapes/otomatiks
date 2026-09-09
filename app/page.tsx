@@ -21,11 +21,11 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function Page() {
-  const { subdomain, event } = await resolveEvent();
+  const { subdomain, event, testimonials } = await resolveEvent();
 
   if (!event) {
     return <EventNotFound subdomain={subdomain} />;
   }
 
-  return <EventWebsite event={event} />;
+  return <EventWebsite event={event} testimonials={testimonials} />;
 }

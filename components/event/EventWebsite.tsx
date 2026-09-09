@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { Event } from "@/lib/types";
+import type { Event, Testimonial } from "@/lib/types";
 import { buildNavLinks } from "@/lib/nav";
 import { listTestimonials } from "@/lib/api";
 import Header from "./Header";
@@ -23,9 +23,16 @@ import FunnelViewTracker from "./FunnelViewTracker";
 import CartDrawer from "@/components/booking/CartDrawer";
 
 // Section order and page rhythm for the event website
-export default async function EventWebsite({ event }: { event: Event }) {
-
-  const testimonials = await listTestimonials(event.id);
+export default async function EventWebsite({
+  event,
+  testimonials: testimonialsOverride,
+}: {
+  event: Event;
+  /** Set by the static-snapshot path (lib/resolve-event.ts, the main/apex domain) to skip the
+   * live fetch below entirely — `null`/`undefined` (every real subdomain) fetches as before. */
+  testimonials?: Testimonial[] | null;
+}) {
+  const testimonials = testimonialsOverride ?? (await listTestimonials(event.id));
   const navLinks = buildNavLinks(event, testimonials.length > 0);
   const style = event.theme_color ? ({ "--accent": event.theme_color } as CSSProperties) : undefined;
 

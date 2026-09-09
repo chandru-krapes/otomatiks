@@ -110,6 +110,8 @@ function SchoolField({ value, onChange }: { value: string; onChange: (value: str
       required
       value={isPreset ? value : ""}
       placeholder="Select school"
+      searchable
+      searchPlaceholder="Type to filter schools…"
       onChange={(event) => {
         if (event.target.value === OTHER_SCHOOL_VALUE) {
           setManual(true);
@@ -134,7 +136,15 @@ function SchoolField({ value, onChange }: { value: string; onChange: (value: str
  * on their own row (see the layout below) rather than a freeform address. */
 function DistrictField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
-    <SelectField label="District" required value={value} onChange={(event) => onChange(event.target.value)} placeholder="Select district">
+    <SelectField
+      label="District"
+      required
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder="Select district"
+      searchable
+      searchPlaceholder="Type to filter districts…"
+    >
       <option value="">Select district</option>
       {TAMIL_NADU_DISTRICTS.map((district) => (
         <option key={district} value={district}>

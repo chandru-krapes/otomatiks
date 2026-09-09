@@ -65,8 +65,12 @@ function TicketCard({ ticket, featured }: { ticket: TicketType; featured?: boole
           : "hover:-translate-y-2 hover:shadow-[var(--elev-3)] focus-within:-translate-y-2"
       } ${featured && !soldOut ? "ring-2 ring-secondary/30" : ""}`}
     >
+      {/* `.tech-grid-fine`'s denser cells read clearly at card scale — `.tech-grid`'s own
+      radial mask (needed when it spans a whole page section) faded this out to invisible once
+      it covered just one card, so this relies on the card's own `overflow-hidden` to clip it
+      to the rounded corners instead. Covers the full card (`inset-0`), not a corner patch. */}
       <div
-        className="tech-grid-fine pointer-events-none absolute -right-6 -top-6 h-28 w-28 opacity-30 transition-opacity duration-[var(--dur-med)] group-hover:opacity-60"
+        className="tech-grid-fine pointer-events-none absolute inset-0 opacity-60 transition-opacity duration-[var(--dur-med)] group-hover:opacity-90"
         aria-hidden="true"
       />
 
@@ -146,7 +150,7 @@ function TicketCard({ ticket, featured }: { ticket: TicketType; featured?: boole
             Unavailable
           </span>
         ) : (
-          <AddToCartButton ticket={ticket} variant="secondary" />
+          <AddToCartButton ticket={ticket} variant="primary" />
         )}
       </div>
     </article>

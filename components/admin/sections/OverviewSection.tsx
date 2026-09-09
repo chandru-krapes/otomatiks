@@ -212,7 +212,11 @@ export default function OverviewSection({ event, withAuth }: { event: Event; wit
                 const maxSold = Math.max(...ticketSales.map((r) => r.sold), 1);
                 return (
                   <li key={row.ticket_type} className="flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between text-sm">
+                    {/* `min-h-[2.25rem]` matches the check-in card's header row (its
+                    text-3xl count sets that height) so the two cards' progress bars, sitting
+                    side by side in the grid below, land on the same line instead of the
+                    shorter text-sm row here pulling this one up. */}
+                    <div className="flex min-h-[2.25rem] items-center justify-between text-sm">
                       <span className="font-semibold text-primary">{row.ticket_type}</span>
                       <span className="text-muted">{row.sold} sold · {formatCurrency(row.revenue)}</span>
                     </div>
@@ -228,11 +232,17 @@ export default function OverviewSection({ event, withAuth }: { event: Event; wit
           <h3 className="font-display text-base font-bold text-primary">Check-in progress</h3>
           {attendance ? (
             <>
-              <div className="flex items-end justify-between">
-                <span className="font-display text-3xl font-extrabold text-secondary">{attendance.checked_in}</span>
-                <span className="text-sm text-muted">of {attendance.total} registered</span>
+              {/* Grouped with its own `gap-1.5` (matching the Ticket sales card's row-to-bar
+              spacing) rather than relying on the section's wider `gap-4` here — otherwise this
+              bar sits noticeably lower than Ticket sales' despite the header rows themselves
+              now matching height (see that card's `min-h-[2.25rem]` comment). */}
+              <div className="flex flex-col gap-1.5">
+                <div className="flex min-h-[2.25rem] items-end justify-between">
+                  <span className="font-display text-3xl font-extrabold text-secondary">{attendance.checked_in}</span>
+                  <span className="text-sm text-muted">of {attendance.total} registered</span>
+                </div>
+                <ProgressBar value={attendance.checked_in} max={attendance.total} />
               </div>
-              <ProgressBar value={attendance.checked_in} max={attendance.total} />
               {Object.keys(attendance.by_purpose).length > 0 && (
                 <ul className="mt-2 flex flex-wrap gap-2">
                   {Object.entries(attendance.by_purpose).map(([purpose, count]) => (
