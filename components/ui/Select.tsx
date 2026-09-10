@@ -157,6 +157,47 @@ export function Select({
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * True from the moment a finger touches the search input until shortly after it leaves —
+   * see the input's `onPointerDown`/`onFocus`/`onBlur` below. `onOpenChange` consults this to
+   * veto a close Radix wants for a reason that has nothing to do with the user's actual intent:
+   * on a touchscreen, *any* focus landing on this input — auto or a deliberate tap, doesn't
+   * matter which — pops the virtual keyboard, which shrinks the viewport, which Radix's own
+   * internal dismiss-layer reads as focus having left the panel (or a pointer interaction
+   * outside it) and closes the whole thing — keyboard and all — the instant it was opened, or
+   * the instant it was tapped. `Select.Content`'s public props don't expose a way to override
+   * that specific internal trigger directly (`onPointerDownOutside` is there, but a tap ON this
+   * input is never "outside" to begin with — it's the *asynchronous* keyboard-driven resize
+   * afterward that Radix reacts to). Since `open` here is fully controlled by us rather than
+   * left to Radix's own state, refusing to honor a close request while this is true works
+   * regardless of *which* internal Radix mechanism asked for it.
+   */
+  const searchInteractingRef = useRef(false);
+  const searchInteractingClearTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function markSearchInteracting() {
+    searchInteractingRef.current = true;
+    if (searchInteractingClearTimer.current) clearTimeout(searchInteractingClearTimer.current);
+  }
+
+  // Debounced, not immediate: mobile browsers can fire a brief blur-then-refocus while the
+  // virtual keyboard finishes animating in, and clearing the flag on that transient blur would
+  // defeat the whole guard right when it's needed. A fresh pointerdown/focus on the same input
+  // cancels this pending clear (see `markSearchInteracting`), so a real blur-away (the user
+  // actually leaves the field) still closes normally shortly after.
+  function scheduleClearSearchInteracting() {
+    if (searchInteractingClearTimer.current) clearTimeout(searchInteractingClearTimer.current);
+    searchInteractingClearTimer.current = setTimeout(() => {
+      searchInteractingRef.current = false;
+    }, 300);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (searchInteractingClearTimer.current) clearTimeout(searchInteractingClearTimer.current);
+    };
+  }, []);
+
   const filteredOptions = useMemo(() => {
     if (!searchable || !query.trim()) return options;
     const needle = query.trim().toLowerCase();
@@ -197,12 +238,23 @@ export function Select({
   return (
     <RadixSelect.Root
       value={radixValue}
-      onValueChange={(next) => onChange({ target: { value: next === EMPTY_VALUE ? "" : next } })}
+      onValueChange={(next) => {
+        // Picking an item closes the panel too, and must never be blocked by the same guard
+        // that protects against Radix's *spurious* keyboard-driven closes — the search input's
+        // own blur (moving focus to the tapped item) can still be inside its 300ms grace window
+        // when this fires. This is a real, deliberate close.
+        searchInteractingRef.current = false;
+        onChange({ target: { value: next === EMPTY_VALUE ? "" : next } });
+      }}
       disabled={disabled}
       required={required}
       name={name}
       open={open}
       onOpenChange={(next) => {
+        // Veto a close Radix wants while the user is actively engaging the search box — see
+        // `searchInteractingRef`'s docstring above for why this is here rather than trusting
+        // Radix's own dismiss-layer.
+        if (!next && searchInteractingRef.current) return;
         setOpen(next);
         if (next) {
           // Radix moves focus onto the panel itself (typically the selected/first item) the
@@ -236,6 +288,12 @@ export function Select({
           position="popper"
           sideOffset={6}
           onKeyDown={handleContentKeyDown}
+          // Same reasoning as `onValueChange` above — Escape is a deliberate, explicit close and
+          // must never be blocked by the search-interaction guard, even while the search input
+          // (which Escape is very likely being pressed from) still technically has focus.
+          onEscapeKeyDown={() => {
+            searchInteractingRef.current = false;
+          }}
           // `w-max` (bounded below by the trigger's own width, above by a cap so one very long
           // label can't stretch the panel edge-to-edge) instead of pinning to the trigger's
           // width outright — the old fixed width forced every option's label to wrap onto
@@ -270,6 +328,14 @@ export function Select({
                 // item instead — Tab-key navigation loses nothing, since `handleContentKeyDown`
                 // above already routes typed characters into `query` however focus landed.
                 tabIndex={-1}
+                // Marks the "don't let Radix close on us" window open — see
+                // `searchInteractingRef`'s docstring above. `onPointerDown` (not `onFocus` alone)
+                // is what actually matters here: it's the earliest possible signal, firing before
+                // the tap has even produced a focus/blur event, let alone the keyboard's own
+                // animation and the viewport resize that follows it.
+                onPointerDown={markSearchInteracting}
+                onFocus={markSearchInteracting}
+                onBlur={scheduleClearSearchInteracting}
                 className="w-full min-w-[10rem] bg-transparent text-sm text-foreground outline-none placeholder:text-muted/60"
               />
             </div>
