@@ -178,7 +178,7 @@ export default function CheckoutPage({ event }: { event: Event }) {
             <div>
               <Link
                 href="/#tickets"
-                className="focus-ring group inline-flex items-center gap-1.5 rounded-md text-sm font-semibold text-secondary transition-colors hover:text-primary"
+                className="focus-ring group inline-flex items-center gap-1.5 rounded-md text-sm font-semibold text-secondary transition-colors hover:text-primary px-4"
               >
                 <span aria-hidden="true" className="inline-block transition-transform duration-[var(--dur-fast)] ease-[var(--ease-out)] group-hover:-translate-x-1">
                   &larr;
