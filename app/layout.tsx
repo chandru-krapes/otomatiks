@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Baloo_2 } from "next/font/google";
 import { CartProvider } from "@/components/booking/CartProvider";
+import InstallPrompt from "@/components/InstallPrompt";
 import PwaServiceWorker from "@/components/PwaServiceWorker";
 import "./globals.css";
 
@@ -76,6 +77,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
             without a localStorage round-trip (see CartProvider). */}
         <CartProvider>{children}</CartProvider>
         <PwaServiceWorker />
+        <InstallPrompt />
       </body>
     </html>
   );
