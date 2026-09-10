@@ -145,8 +145,7 @@ export function emptyAttendee(): Attendee {
 /**
  * flow.pdf "The second event": pre-fill an attendee card from a saved
  * student instead of retyping. Only overwrites fields the saved record
- * actually has a value for. `SavedStudent` has no `district` of its own, so
- * that field is left exactly as `applySavedStudent` found it.
+ * actually has a value for.
  */
 export function applySavedStudent(attendee: Attendee, saved: SavedStudent): Attendee {
   return {
@@ -157,6 +156,7 @@ export function applySavedStudent(attendee: Attendee, saved: SavedStudent): Atte
     email: saved.email || attendee.email,
     phone: saved.phone || attendee.phone,
     school: saved.school || attendee.school,
+    district: saved.school_address || attendee.district,
   };
 }
 
@@ -184,16 +184,20 @@ export function copyAttendeeDetails(attendee: Attendee, source: Attendee): Atten
  * Attendee fields the backend expects for the current `relationship`.
  * `school` is sent for every relationship now — it used to be a
  * student-only field, but the backend requires it on every attendee
- * regardless of who's booking on their behalf. `district` is UI-only
- * convenience alongside it, so it's only included when actually set —
- * never sent as an empty string.
+ * regardless of who's booking on their behalf.
+ *
+ * `district` (this form's own name for the field — see `DistrictField`) maps onto the wire as
+ * `school_address`, the backend Attendee model's actual column for it — sent under the key
+ * `district` for a long time, which the backend's serializer silently ignored as an unknown
+ * field, so nothing typed into that dropdown ever reached the database. Still only included
+ * when actually set, never sent as an empty string.
  */
 export function attendeeToPayload(attendee: Attendee, relationship: Relationship): BookingAttendeeInput {
-  const district = attendee.district ? { district: attendee.district } : {};
+  const schoolAddress = attendee.district ? { school_address: attendee.district } : {};
   if (relationship === "student") {
-    return { name: attendee.name, grade: attendee.grade, email: attendee.email, phone: attendee.phone, school: attendee.school, ...district };
+    return { name: attendee.name, grade: attendee.grade, email: attendee.email, phone: attendee.phone, school: attendee.school, ...schoolAddress };
   }
-  return { name: attendee.name, grade: attendee.grade, date_of_birth: attendee.dob, school: attendee.school, ...district };
+  return { name: attendee.name, grade: attendee.grade, date_of_birth: attendee.dob, school: attendee.school, ...schoolAddress };
 }
 
 /**

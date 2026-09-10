@@ -259,6 +259,17 @@ export function Select({
                 // (paste, an IME composing text, autofill).
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={searchPlaceholder}
+                // `autoFocusSearch` above only gates *our own* `.focus()` calls — it did nothing
+                // about Radix's own `Content` focus-scope, which auto-focuses the first focusable
+                // descendant the instant the panel mounts regardless, landing on this input
+                // before either of our rAF calls even run. That's what was actually popping the
+                // keyboard on open on touch devices: on a phone, that immediate focus-then-the
+                // -resulting-keyboard-animation reads as the panel opening then instantly
+                // snapping shut, keyboard and all. `tabIndex={-1}` removes this input from
+                // Radix's own tabbable-candidate search, so its focus-scope skips straight to an
+                // item instead — Tab-key navigation loses nothing, since `handleContentKeyDown`
+                // above already routes typed characters into `query` however focus landed.
+                tabIndex={-1}
                 className="w-full min-w-[10rem] bg-transparent text-sm text-foreground outline-none placeholder:text-muted/60"
               />
             </div>
