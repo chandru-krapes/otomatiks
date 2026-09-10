@@ -79,7 +79,15 @@ export default function CheckoutPage({ event }: { event: Event }) {
     // before it's actually needed (booking creation still requires an authenticated request even
     // when no verification does). The backend re-checks the live policy itself, so this can't be
     // used to skip a requirement that's actually configured.
-    if (policy.checkout_verification === "none" && !auth) {
+    //
+    // Re-bootstraps (not just `!auth`) whenever the typed email no longer matches the account
+    // already bootstrapped: without this, going back to step 2 and changing the email after the
+    // first "Continue" click kept booking under the *old* email's account — the auth token never
+    // updated, only the (unused) `primary.email` did.
+    const needsBootstrap =
+      policy.checkout_verification === "none" &&
+      (!auth || auth.user.email.trim().toLowerCase() !== primary.email.trim().toLowerCase());
+    if (needsBootstrap) {
       setContinuingToAttendees(true);
       const result = await checkoutSkipVerification({ email: primary.email.trim(), full_name: primary.name.trim() });
       setContinuingToAttendees(false);

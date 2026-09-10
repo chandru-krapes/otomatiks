@@ -153,19 +153,18 @@ export default function CartDrawer() {
                                 // for someone expecting it to add another ticket. "+" here adds
                                 // a whole new team line instead (same as the ticket card's own
                                 // "Add another ticket"); removing a team is the trash icon above.
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => addTicket(line.ticket)}
-                                    aria-label={`Add another ${line.ticket.name} team`}
-                                    className="focus-ring press flex h-7 w-7 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35"
-                                  >
-                                    <PlusIcon />
-                                  </button>
-                                  <span className="text-xs text-muted">
-                                    {line.attendees.length} / {max} members
-                                  </span>
-                                </div>
+                                // A team ticket is one booking regardless of headcount, so there's
+                                // nothing here worth counting the way individual tickets count
+                                // attendees — no "X / N members" label, just the one action this
+                                // line actually has (add another team).
+                                <button
+                                  type="button"
+                                  onClick={() => addTicket(line.ticket)}
+                                  aria-label={`Add another ${line.ticket.name} team`}
+                                  className="focus-ring press flex h-7 w-7 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35"
+                                >
+                                  <PlusIcon />
+                                </button>
                               ) : (
                                 <div className="flex items-center gap-2">
                                   <button

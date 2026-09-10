@@ -73,49 +73,6 @@ export const CHENNAI_SCHOOLS: string[] = [
   "Sri Sankara Senior Secondary School",
 ];
 
-/** Every district in Tamil Nadu — a fixed, exhaustive government list, so unlike
- * `CHENNAI_SCHOOLS` this needs no "Other" fallback. */
-export const TAMIL_NADU_DISTRICTS: string[] = [
-  "Ariyalur",
-  "Chengalpattu",
-  "Chennai",
-  "Coimbatore",
-  "Cuddalore",
-  "Dharmapuri",
-  "Dindigul",
-  "Erode",
-  "Kallakurichi",
-  "Kanchipuram",
-  "Kanyakumari",
-  "Karur",
-  "Krishnagiri",
-  "Madurai",
-  "Mayiladuthurai",
-  "Nagapattinam",
-  "Namakkal",
-  "Nilgiris",
-  "Perambalur",
-  "Pudukkottai",
-  "Ramanathapuram",
-  "Ranipet",
-  "Salem",
-  "Sivaganga",
-  "Tenkasi",
-  "Thanjavur",
-  "Theni",
-  "Thoothukudi",
-  "Tiruchirappalli",
-  "Tirunelveli",
-  "Tirupathur",
-  "Tiruppur",
-  "Tiruvallur",
-  "Tiruvannamalai",
-  "Tiruvarur",
-  "Vellore",
-  "Viluppuram",
-  "Virudhunagar",
-];
-
 export interface PrimaryContact {
   name: string;
   email: string;
@@ -131,15 +88,11 @@ export interface Attendee {
   email: string;
   /** student attendees only. */
   phone: string;
-  /** student attendees only. */
   school: string;
-  /** The school's district — see TAMIL_NADU_DISTRICTS. Not a documented backend
-   * field; included in the payload only when set (see `attendeeToPayload`). */
-  district: string;
 }
 
 export function emptyAttendee(): Attendee {
-  return { name: "", grade: "", dob: "", email: "", phone: "", school: "", district: "" };
+  return { name: "", grade: "", dob: "", email: "", phone: "", school: "" };
 }
 
 /**
@@ -156,7 +109,6 @@ export function applySavedStudent(attendee: Attendee, saved: SavedStudent): Atte
     email: saved.email || attendee.email,
     phone: saved.phone || attendee.phone,
     school: saved.school || attendee.school,
-    district: saved.school_address || attendee.district,
   };
 }
 
@@ -176,7 +128,6 @@ export function copyAttendeeDetails(attendee: Attendee, source: Attendee): Atten
     email: source.email || attendee.email,
     phone: source.phone || attendee.phone,
     school: source.school || attendee.school,
-    district: source.district || attendee.district,
   };
 }
 
@@ -186,18 +137,17 @@ export function copyAttendeeDetails(attendee: Attendee, source: Attendee): Atten
  * student-only field, but the backend requires it on every attendee
  * regardless of who's booking on their behalf.
  *
- * `district` (this form's own name for the field — see `DistrictField`) maps onto the wire as
- * `school_address`, the backend Attendee model's actual column for it — sent under the key
- * `district` for a long time, which the backend's serializer silently ignored as an unknown
- * field, so nothing typed into that dropdown ever reached the database. Still only included
- * when actually set, never sent as an empty string.
+ * There used to be a separate "district" field here too, mapped onto the backend's
+ * `school_address` column — removed from the booking form entirely (see AttendeeCard): the
+ * school itself is now the one place that information lives, so nothing separate is collected
+ * or sent for it. `school_address` stays optional server-side, so omitting it changes nothing
+ * about validation.
  */
 export function attendeeToPayload(attendee: Attendee, relationship: Relationship): BookingAttendeeInput {
-  const schoolAddress = attendee.district ? { school_address: attendee.district } : {};
   if (relationship === "student") {
-    return { name: attendee.name, grade: attendee.grade, email: attendee.email, phone: attendee.phone, school: attendee.school, ...schoolAddress };
+    return { name: attendee.name, grade: attendee.grade, email: attendee.email, phone: attendee.phone, school: attendee.school };
   }
-  return { name: attendee.name, grade: attendee.grade, date_of_birth: attendee.dob, school: attendee.school, ...schoolAddress };
+  return { name: attendee.name, grade: attendee.grade, date_of_birth: attendee.dob, school: attendee.school };
 }
 
 /**

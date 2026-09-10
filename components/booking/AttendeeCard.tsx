@@ -7,7 +7,6 @@ import {
   CHENNAI_SCHOOLS,
   GRADE_OPTIONS,
   OTHER_SCHOOL_VALUE,
-  TAMIL_NADU_DISTRICTS,
   type Attendee,
   type Relationship,
 } from "@/lib/booking";
@@ -132,29 +131,6 @@ function SchoolField({ value, onChange }: { value: string; onChange: (value: str
   );
 }
 
-/** The school's district — every Tamil Nadu district, paired with `SchoolField`
- * on their own row (see the layout below) rather than a freeform address. */
-function DistrictField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return (
-    <SelectField
-      label="District"
-      required
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      placeholder="Select district"
-      searchable
-      searchPlaceholder="Type to filter districts…"
-    >
-      <option value="">Select district</option>
-      {TAMIL_NADU_DISTRICTS.map((district) => (
-        <option key={district} value={district}>
-          {district}
-        </option>
-      ))}
-    </SelectField>
-  );
-}
-
 function AttendeeCard({
   attendee,
   itemLabel,
@@ -222,6 +198,12 @@ function AttendeeCard({
             onChange={(event) => onChange({ ...attendee, name: event.target.value })}
           />
           <GradeField value={attendee.grade} onChange={(grade) => onChange({ ...attendee, grade })} />
+          <DatePicker
+            label="Date of birth"
+            required
+            value={attendee.dob}
+            onChange={(event) => onChange({ ...attendee, dob: event.target.value })}
+          />
           <TextField
             label="Email"
             required
@@ -255,13 +237,13 @@ function AttendeeCard({
         </div>
       )}
 
-      {/* School and its district share their own row, below whichever set of
-          fields above — a long school name no longer competes for grid
-          width against Full name/Grade/DOB the way it did when all four
-          fields sat in one row together. */}
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      {/* School gets its own row below whichever set of fields above — a long school name no
+          longer competes for grid width against Full name/Grade/DOB the way it did when every
+          field sat in one row together. There's no separate district field anymore: the school
+          itself (either picked from the list or typed manually) is the one place that
+          information lives now, instead of asking for it twice. */}
+      <div className="mt-4">
         <SchoolField value={attendee.school} onChange={(school) => onChange({ ...attendee, school })} />
-        <DistrictField value={attendee.district} onChange={(district) => onChange({ ...attendee, district })} />
       </div>
     </div>
   );

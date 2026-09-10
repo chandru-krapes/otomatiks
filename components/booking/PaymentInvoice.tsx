@@ -9,22 +9,51 @@ import Button from "@/components/ui/Button";
 
 const REDIRECT_URL = "https://shop.qbee.org.in";
 const REDIRECT_SECONDS = 10;
+// Scoped per booking (not one flat key) so a *different* booking's invoice still redirects once
+// on its own first visit — this only ever suppresses a repeat for the exact booking that already
+// sent someone to the shop.
+const redirectStorageKey = (bookingReference: string) => `otomatiks:invoice-redirected:${bookingReference}`;
 
 export default function PaymentInvoice({ event, booking }: { event: Event; booking: BookingResponse }) {
   const issuedAt = booking.created_at ? new Date(booking.created_at) : null;
 
+  // Read once, lazily, on mount — true only if *this exact booking's* invoice already redirected
+  // earlier in this browser session, so a fresh visit still counts down and redirects normally.
+  const [alreadyRedirected] = useState(() => {
+    try {
+      return window.sessionStorage.getItem(redirectStorageKey(booking.booking_reference)) === "1";
+    } catch {
+      return false;
+    }
+  });
+
   const [secondsLeft, setSecondsLeft] = useState(REDIRECT_SECONDS);
-  const [cancelled, setCancelled] = useState(false);
+  // Starts already-cancelled when `alreadyRedirected` — skips the countdown/redirect entirely
+  // rather than running it once more and sending the visitor straight back to the shop the
+  // instant they land here again.
+  const [cancelled, setCancelled] = useState(alreadyRedirected);
 
   useEffect(() => {
     if (cancelled) return;
     if (secondsLeft <= 0) {
-      window.location.href = REDIRECT_URL;
+      try {
+        window.sessionStorage.setItem(redirectStorageKey(booking.booking_reference), "1");
+      } catch {
+        // Storage unavailable (private mode, blocked) — the redirect below still happens once
+        // for this page load; only the "don't repeat on a later back-navigation" guard is lost.
+      }
+      // `.replace()`, not `window.location.href =` — the latter pushes a *new* history entry on
+      // top of this page, so hitting back (or swiping back) from the shop landed right back here
+      // with the countdown still armed, which immediately fired again - back didn't actually let
+      // anyone leave, it just replayed the redirect. `.replace()` swaps this entry out instead of
+      // adding to the stack, so "back" from the shop skips straight past this page to whatever
+      // was open before it - nothing left here to re-trigger.
+      window.location.replace(REDIRECT_URL);
       return;
     }
     const timer = setTimeout(() => setSecondsLeft((current) => current - 1), 1000);
     return () => clearTimeout(timer);
-  }, [secondsLeft, cancelled]);
+  }, [secondsLeft, cancelled, booking.booking_reference]);
 
   return (
     <div className="route-transition mx-auto flex min-h-screen max-w-2xl flex-col items-center gap-6 overflow-x-hidden px-4 py-10">

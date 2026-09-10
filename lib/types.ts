@@ -158,10 +158,12 @@ export interface BookingAttendeeInput {
   /** Required by the backend on every attendee now, regardless of `relationship` — kept
    * optional here only because this type is shared with older/partial call sites. */
   school?: string;
-  /** The school's district (see lib/booking.ts TAMIL_NADU_DISTRICTS and its `DistrictField`) —
-   * maps to the backend Attendee model's real `school_address` column (apps/registration/
-   * serializers/attendees.py AttendeeInputSerializer). Omitted from the payload entirely when
-   * blank rather than sent as "". */
+  /** The backend Attendee model's `school_address` column (apps/registration/serializers/
+   * attendees.py AttendeeInputSerializer). The booking form no longer collects this as its own
+   * field — the school itself is the one place that information lives now (see
+   * components/booking/AttendeeCard.tsx) — so lib/booking.ts's `attendeeToPayload` never sends
+   * it; kept here (still optional server-side) only because `SavedStudent`/`InstituteStudent`
+   * elsewhere in this file still read it back from past bookings. */
   school_address?: string;
 }
 

@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { TicketType } from "@/lib/types";
-import { emptyAttendee, type Attendee } from "@/lib/booking";
+import { copyAttendeeDetails, emptyAttendee, type Attendee } from "@/lib/booking";
 import { clearStoredCart, loadCart, saveCart, type CartLine } from "@/lib/cart";
 import { trackFunnelStep } from "@/lib/funnel";
 
@@ -19,6 +19,12 @@ interface CartContextValue {
   addAttendeeToLine: (lineId: string) => void;
   removeAttendeeFromLine: (lineId: string, index: number) => void;
   updateAttendee: (lineId: string, index: number, attendee: Attendee) => void;
+  /** Copies `sourceLineId`'s first attendee onto `lineId`'s first attendee and marks `lineId` as
+   * linked to it — see `CartLine.linkedFromLineId`. */
+  linkAttendee: (lineId: string, sourceLineId: string) => void;
+  /** Breaks a link set by `linkAttendee` — the line keeps whatever attendee data it last mirrored,
+   * now editable on its own. */
+  unlinkAttendee: (lineId: string) => void;
   clear: () => void;
 }
 
@@ -71,7 +77,14 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeLine = useCallback((lineId: string) => {
-    setLines((current) => current.filter((line) => line.id !== lineId));
+    setLines((current) =>
+      current
+        .filter((line) => line.id !== lineId)
+        // A line linked to the one just removed would otherwise be permanently locked, mirroring
+        // a source that no longer exists — unlink it instead, leaving it editable with whatever
+        // attendee data it last mirrored.
+        .map((line) => (line.linkedFromLineId === lineId ? { ...line, linkedFromLineId: undefined } : line)),
+    );
   }, []);
 
   const addAttendeeToLine = useCallback((lineId: string) => {
@@ -94,11 +107,36 @@ export function CartProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateAttendee = useCallback((lineId: string, index: number, attendee: Attendee) => {
-    setLines((current) =>
-      current.map((line) =>
+    setLines((current) => {
+      const next = current.map((line) =>
         line.id === lineId ? { ...line, attendees: line.attendees.map((a, i) => (i === index ? attendee : a)) } : line,
-      ),
-    );
+      );
+      if (index !== 0) return next;
+      // Mirror an edit to this line's first attendee onto every line linked to it (see
+      // `linkAttendee`) — "fill ticket 3 from ticket 1" keeps ticket 3 in sync with ticket 1
+      // rather than letting the two drift apart the moment either is edited again.
+      return next.map((line) =>
+        line.linkedFromLineId === lineId ? { ...line, attendees: [attendee, ...line.attendees.slice(1)] } : line,
+      );
+    });
+  }, []);
+
+  const linkAttendee = useCallback((lineId: string, sourceLineId: string) => {
+    setLines((current) => {
+      const source = current.find((line) => line.id === sourceLineId);
+      const sourceAttendee = source?.attendees[0];
+      if (!sourceAttendee) return current;
+      const copied = copyAttendeeDetails(emptyAttendee(), sourceAttendee);
+      return current.map((line) =>
+        line.id === lineId
+          ? { ...line, linkedFromLineId: sourceLineId, attendees: [copied, ...line.attendees.slice(1)] }
+          : line,
+      );
+    });
+  }, []);
+
+  const unlinkAttendee = useCallback((lineId: string) => {
+    setLines((current) => current.map((line) => (line.id === lineId ? { ...line, linkedFromLineId: undefined } : line)));
   }, []);
 
   const clear = useCallback(() => {
@@ -123,6 +161,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       addAttendeeToLine,
       removeAttendeeFromLine,
       updateAttendee,
+      linkAttendee,
+      unlinkAttendee,
       clear,
     }),
     [
@@ -136,6 +176,8 @@ export function CartProvider({ children }: { children: ReactNode }) {
       addAttendeeToLine,
       removeAttendeeFromLine,
       updateAttendee,
+      linkAttendee,
+      unlinkAttendee,
       clear,
     ],
   );

@@ -149,11 +149,26 @@ export default function CheckoutForm({
         <section className="flex flex-col gap-5">
           <h3 className="font-display text-lg font-bold text-primary">Your details</h3>
 
-          {verifiedUser && (
+          {checkoutVerification !== "none" && verifiedUser ? (
+            // A real OTP/phone verification actually happened for this step-1 flow — this pill
+            // is a fact about what was confirmed, not just an echo of the typed email, so it's
+            // fine that it doesn't live-update from the email field below.
             <p className="flex w-fit items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700">
               <CheckIcon />
               Verified: {verifiedUser.is_phone_verified && verifiedUser.phone ? verifiedUser.phone : verifiedUser.email}
             </p>
+          ) : (
+            checkoutVerification === "none" &&
+            primary.email.trim() && (
+              // `checkout_verification === "none"` never verifies anything — showing a green
+              // "Verified" pill here would be a lie, and worse, it used to freeze on whatever
+              // email was typed the first time step 2 was left, even after coming back and
+              // editing it. This instead just echoes the *current* email field live, so changing
+              // it updates the label immediately and nothing implies it was checked.
+              <p className="text-xs text-muted">
+                Proceeding with email: <span className="font-semibold text-foreground">{primary.email.trim()}</span>
+              </p>
+            )
           )}
 
           <div className="flex flex-col gap-1.5">
@@ -233,26 +248,18 @@ export default function CheckoutForm({
 
       {step === 3 && (
         <form id={CHECKOUT_FORM_ID} onSubmit={onSubmit} className="flex flex-col gap-10">
-          {lines.map((line, index) => {
-            const previousLine = index > 0 ? lines[index - 1] : null;
-            const previousFirstAttendee = previousLine?.attendees[0];
-            const previousAttendeeSuggestion =
-              previousLine && previousFirstAttendee?.name
-                ? { name: previousFirstAttendee.name, ticketName: previousLine.ticket.name, source: previousFirstAttendee }
-                : null;
-            return (
-              <div key={line.id} className={index > 0 ? "border-t border-primary/10 pt-10" : undefined}>
-                <CartLineAttendees
-                  line={line}
-                  index={index}
-                  total={lines.length}
-                  relationship={relationship}
-                  savedStudents={savedStudents}
-                  previousAttendeeSuggestion={previousAttendeeSuggestion}
-                />
-              </div>
-            );
-          })}
+          {lines.map((line, index) => (
+            <div key={line.id} className={index > 0 ? "border-t border-primary/10 pt-10" : undefined}>
+              <CartLineAttendees
+                line={line}
+                lines={lines}
+                index={index}
+                total={lines.length}
+                relationship={relationship}
+                savedStudents={savedStudents}
+              />
+            </div>
+          ))}
           {submitError && (
             <Alert tone="error" emphasize>
               {submitError}

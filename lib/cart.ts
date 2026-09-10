@@ -16,6 +16,16 @@ export interface CartLine {
   id: string;
   ticket: TicketType;
   attendees: Attendee[];
+  /**
+   * Set when this line's first attendee ("Use these details" — CartLineAttendees) was filled by
+   * copying another line's first attendee instead of typed in directly. That source line's `id`.
+   * While set, this line's attendee 0 is locked/read-only in the UI and mirrors every edit made
+   * to the source line's attendee 0 (see CartProvider `updateAttendee`); "Unlink and edit
+   * separately" clears it. Never points at a line that is itself linked — only an
+   * independently-filled line can be a suggestion source, so this never chains more than one
+   * level deep.
+   */
+  linkedFromLineId?: string;
 }
 
 /**
