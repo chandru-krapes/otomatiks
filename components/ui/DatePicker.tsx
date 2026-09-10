@@ -72,9 +72,19 @@ export default function DatePicker({
         </Popover.Trigger>
         <Popover.Portal>
           <Popover.Content
-            align="start"
+            align="center"
             sideOffset={8}
-            className="admin-datepicker z-[70] w-[19rem] rounded-2xl border border-hairline-strong bg-white p-4 shadow-[var(--elev-3)] animate-pop-in"
+            collisionPadding={16}
+            // `align="start"` (the old value) anchors the panel's *left edge* to the trigger's
+            // left edge — on a phone, where the trigger already spans nearly the full card
+            // width, that reads as "shifted right of center" rather than centered under it.
+            // `align="center"` anchors centers instead, and the width itself is capped to
+            // `min(19rem, 100vw - 2rem)` (not a flat 19rem/304px) so it can't be wider than the
+            // viewport to begin with — same reasoning as the searchable Select panel's width cap
+            // (components/ui/Select.tsx): Radix's collision handling can shift a too-wide panel,
+            // not shrink it, so an intrinsically-too-wide panel still overflows regardless of
+            // alignment.
+            className="admin-datepicker z-[70] w-[min(19rem,calc(100vw-2rem))] rounded-2xl border border-hairline-strong bg-white p-4 shadow-[var(--elev-3)] animate-pop-in"
           >
             <DayPicker
               mode="single"

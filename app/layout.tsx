@@ -43,6 +43,18 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: "#066aab",
   colorScheme: "light",
+  // Without this, Android Chrome's default is `resizes-content`: opening the on-screen keyboard
+  // shrinks the actual layout viewport (`window.innerHeight`), not just the visible area. Every
+  // floating/positioned element on the page (any `components/ui/Select.tsx` search-filter
+  // dropdown, DatePicker, ...) uses floating-ui under the hood, which watches for exactly that
+  // resize and recomputes position/collision against the new, keyboard-shrunk boundary — with a
+  // fixed-height panel and a trigger low on the page, that recompute routinely finds nowhere
+  // sane to fit and the panel collapses/moves off-screen, reading as "the dropdown closed" even
+  // though nothing ever set its React `open` state to false (iOS Safari never had this problem:
+  // it always overlays the keyboard instead of resizing the layout viewport). `overlays-content`
+  // opts into that same overlay behavior on Android too, so the layout viewport — and therefore
+  // every floating element's positioning math — stays untouched by the keyboard opening at all.
+  interactiveWidget: "overlays-content",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

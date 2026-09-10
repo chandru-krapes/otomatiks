@@ -287,6 +287,7 @@ export function Select({
         <RadixSelect.Content
           position="popper"
           sideOffset={6}
+          collisionPadding={16}
           onKeyDown={handleContentKeyDown}
           // Same reasoning as `onValueChange` above — Escape is a deliberate, explicit close and
           // must never be blocked by the search-interaction guard, even while the search input
@@ -299,8 +300,12 @@ export function Select({
           // width outright — the old fixed width forced every option's label to wrap onto
           // multiple lines the moment it was longer than the trigger button itself (a school
           // name, say), even though the floating panel has no reason to match that width.
-          // Radix's own collision handling still keeps it from overflowing the viewport.
-          className="admin-scroll-light z-[70] max-h-72 w-max min-w-[var(--radix-select-trigger-width)] max-w-[26rem] overflow-y-auto rounded-2xl border border-hairline-strong bg-white p-1.5 shadow-[var(--elev-3)] animate-pop-in"
+          // The cap itself is `min(26rem, 100vw - 2rem)`, not a flat `26rem` — Radix's collision
+          // handling (`avoidCollisions`) can only *shift* the panel to stay in the viewport, it
+          // can't shrink one that's intrinsically wider than the viewport itself; a flat 26rem
+          // (416px) is wider than most phones outright, so a long label (a school name) forced
+          // the panel's right edge straight off the screen no matter where it was positioned.
+          className="admin-scroll-light z-[70] max-h-72 w-max min-w-[var(--radix-select-trigger-width)] max-w-[min(26rem,calc(100vw-2rem))] overflow-y-auto rounded-2xl border border-hairline-strong bg-white p-1.5 shadow-[var(--elev-3)] animate-pop-in"
         >
           {searchable && (
             // `sticky` (not a plain flow element above `Viewport`) so it stays pinned to the
