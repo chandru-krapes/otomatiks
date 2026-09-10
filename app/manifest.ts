@@ -39,7 +39,16 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
       // file itself rather than trusting a guessed value.
       ...(logo ? [{ src: logo, sizes: "any" as const }] : []),
       // Always included too, so an event with no logo yet (or a browser that skips the entry
-      // above) still gets a real icon instead of a blank/default one.
+      // above) still gets a real icon instead of a blank/default one. Real PNGs at the standard
+      // 192/512 sizes, not just the SVG below — Android's installability check (and WebAPK
+      // generation for the actual home-screen icon) is unreliable with an SVG-only icon set, so
+      // "Add to Home Screen" could silently fail to produce a proper icon without these.
+      { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      // Separate maskable entry (Android's adaptive-icon system crops to a circle/squircle/
+      // rounded-square at display time) — same art, since the background already fills the
+      // canvas edge-to-edge and the glyph sits well inside the standard safe zone.
+      { src: "/icons/icon-512-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
       { src: "/icons/app-icon.svg", sizes: "any", type: "image/svg+xml" },
     ],
   };

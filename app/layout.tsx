@@ -35,7 +35,13 @@ export const metadata: Metadata = {
   // `appleWebApp` block. `generateMetadata` on the event page overrides `apple` with the
   // resolved event's own logo when it has one — this generic icon only shows for the apex
   // domain or an event with no logo uploaded yet.
-  icons: { icon: "/icons/app-icon.svg", apple: "/icons/app-icon.svg" },
+  //
+  // `apple` is a real PNG (public/icons/apple-touch-icon.png), not the SVG — iOS Safari doesn't
+  // reliably rasterize SVG for its home-screen icon at all, so `apple-touch-icon.svg` alone
+  // silently produced no icon (or a blank/default one) on iOS "Add to Home Screen". `icon` stays
+  // the SVG for browsers that do support it (crisp at any size); PNGs at the standard 192/512
+  // sizes are what the web manifest itself offers for everyone else — see app/manifest.ts.
+  icons: { icon: "/icons/app-icon.svg", apple: "/icons/apple-touch-icon.png" },
   appleWebApp: { capable: true, statusBarStyle: "default", title: "Otomatiks Events" },
 };
 
