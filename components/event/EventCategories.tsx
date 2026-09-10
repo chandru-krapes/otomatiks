@@ -251,8 +251,8 @@ function CategoryCard({ category }: { category: TicketType }) {
           </div>
         )}
 
-        <div className="mt-auto flex items-center justify-between gap-3 pt-2">
-          <p className="font-display text-2xl font-extrabold leading-none text-primary">
+        <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-2">
+          <p className="shrink-0 font-display text-2xl font-extrabold leading-none text-primary">
             {formatCurrency(Number(category.price) || 0)}
           </p>
           <AddToCartButton ticket={category} />

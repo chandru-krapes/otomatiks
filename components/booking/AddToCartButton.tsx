@@ -57,7 +57,7 @@ export default function AddToCartButton({
 
   return (
     <div className={`flex flex-col items-start gap-1.5 ${className}`}>
-      <div className="inline-flex items-center gap-3 rounded-full border border-primary/15 bg-white/70 px-3 py-1.5 shadow-[var(--elev-1)]">
+      <div className="inline-flex shrink-0 items-center gap-3 whitespace-nowrap rounded-full border border-primary/15 bg-white/70 px-3 py-1.5 shadow-[var(--elev-1)]">
         <button
           type="button"
           onClick={() => removeAttendeeFromLine(line.id, line.attendees.length - 1)}
@@ -66,7 +66,7 @@ export default function AddToCartButton({
         >
           <MinusIcon />
         </button>
-        <span key={line.attendees.length} className="animate-pop-in flex items-center gap-1.5 text-sm font-bold text-primary">
+        <span key={line.attendees.length} className="animate-pop-in flex items-center gap-1.5 whitespace-nowrap text-sm font-bold text-primary">
           <CheckIcon />
           {line.attendees.length} in your booking
         </span>
