@@ -1,18 +1,12 @@
 "use client";
 
-import { memo, useCallback, useState } from "react";
+import { memo, useCallback } from "react";
 import type { SavedStudent } from "@/lib/types";
-import {
-  applySavedStudent,
-  CHENNAI_SCHOOLS,
-  GRADE_OPTIONS,
-  OTHER_SCHOOL_VALUE,
-  type Attendee,
-  type Relationship,
-} from "@/lib/booking";
+import { applySavedStudent, GRADE_OPTIONS, type Attendee, type Relationship } from "@/lib/booking";
 import { TextField } from "@/components/ui/Field";
 import { Select, SelectField } from "@/components/ui/Select";
 import DatePicker from "@/components/ui/DatePicker";
+import SchoolCombobox from "@/components/ui/SchoolCombobox";
 
 /**
  * flow.pdf "The second event": "sees Ananya and Karthik saved, and registers
@@ -64,69 +58,6 @@ function GradeField({ value, onChange }: { value: string; onChange: (value: stri
           {grade}
         </option>
       ))}
-    </SelectField>
-  );
-}
-
-/**
- * School dropdown of common Chennai schools, with a manual fallback: picking
- * "Other" (or already having a value that isn't on the list — a saved
- * student's school, say) swaps in a free-text field, so a school that isn't
- * listed — or its full address, per the field's own hint — can still be
- * entered instead of forcing a pick from the list.
- */
-function SchoolField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const isPreset = CHENNAI_SCHOOLS.includes(value);
-  const [manual, setManual] = useState(value !== "" && !isPreset);
-
-  if (manual) {
-    return (
-      <div className="flex flex-col gap-1.5">
-        <TextField
-          label="School"
-          required
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder="School name"
-        />
-        <button
-          type="button"
-          onClick={() => {
-            setManual(false);
-            onChange("");
-          }}
-          className="focus-ring self-start rounded-md text-xs font-semibold text-secondary transition-colors hover:text-primary"
-        >
-          Choose from the list instead
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <SelectField
-      label="School"
-      required
-      value={isPreset ? value : ""}
-      placeholder="Select school"
-      searchable
-      searchPlaceholder="Type to filter schools…"
-      onChange={(event) => {
-        if (event.target.value === OTHER_SCHOOL_VALUE) {
-          setManual(true);
-          onChange("");
-        } else {
-          onChange(event.target.value);
-        }
-      }}
-    >
-      <option value="">Select school</option>
-      {CHENNAI_SCHOOLS.map((school) => (
-        <option key={school} value={school}>
-          {school}
-        </option>
-      ))}
-      <option value={OTHER_SCHOOL_VALUE}>Other — enter manually</option>
     </SelectField>
   );
 }
@@ -243,7 +174,7 @@ function AttendeeCard({
           itself (either picked from the list or typed manually) is the one place that
           information lives now, instead of asking for it twice. */}
       <div className="mt-4">
-        <SchoolField value={attendee.school} onChange={(school) => onChange({ ...attendee, school })} />
+        <SchoolCombobox value={attendee.school} onChange={(school) => onChange({ ...attendee, school })} required />
       </div>
     </div>
   );

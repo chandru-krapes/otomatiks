@@ -44,35 +44,6 @@ export const RELATIONSHIP_OPTIONS: { value: Relationship; label: string }[] = [
  * every value the booking form actually needs to distinguish between. */
 export const GRADE_OPTIONS: string[] = Array.from({ length: 10 }, (_, i) => String(i + 3));
 
-/** Sentinel `School` option value that swaps the dropdown for a manual text
- * field — for a school that isn't on the list, or (per the field's hint)
- * typing its full address instead of just picking a name. */
-export const OTHER_SCHOOL_VALUE = "__other__";
-
-/**
- * A pick-list of well-known Chennai schools, so most attendees can select
- * rather than type — "most common schools currently in Chennai" per the
- * request that added this. Not exhaustive: `OTHER_SCHOOL_VALUE` covers
- * everyone else.
- */
-export const CHENNAI_SCHOOLS: string[] = [
-  "DAV Boys Senior Secondary School",
-  "PSBB Senior Secondary School",
-  "Chettinad Vidyashram",
-  "Vidya Mandir Senior Secondary School",
-  "Sishya School",
-  "The Hindu Senior Secondary School",
-  "Bala Vidya Mandir",
-  "Chinmaya Vidyalaya",
-  "Velammal Vidyalaya",
-  "St. Bede's Anglo Indian Higher Secondary School",
-  "Don Bosco Matriculation Higher Secondary School",
-  "SBOA School and Junior College",
-  "Lady Andal Venkatasubba Rao School",
-  "Good Shepherd Matriculation Higher Secondary School",
-  "Sri Sankara Senior Secondary School",
-];
-
 export interface PrimaryContact {
   name: string;
   email: string;
