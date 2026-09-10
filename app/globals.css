@@ -932,6 +932,24 @@ section[id] {
   background: color-mix(in srgb, var(--primary) 8%, transparent);
 }
 
+/* `captionLayout="dropdown"` (components/ui/DatePicker.tsx) — native month/year <select>s for
+   jumping straight to a birth year instead of clicking "previous month" dozens of times. The
+   library ships them essentially unstyled (browser-default <select> chrome), so this retints
+   them to match every other themed control on the site instead of standing out as raw OS UI. */
+.admin-datepicker .rdp-dropdown_root {
+  border-radius: 0.5rem;
+}
+
+.admin-datepicker .rdp-dropdown_root:hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.admin-datepicker .rdp-caption_label {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
 /* ==========================================================================
    REDUCED MOTION
    One place that switches off every non-essential animation on the site.

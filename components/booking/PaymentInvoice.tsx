@@ -7,7 +7,6 @@ import { formatCurrency } from "@/lib/pricing";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 
-// Where a paid-up buyer lands once this page's own countdown runs out for the event website
 const REDIRECT_URL = "https://shop.qbee.org.in";
 const REDIRECT_SECONDS = 10;
 
@@ -28,7 +27,7 @@ export default function PaymentInvoice({ event, booking }: { event: Event; booki
   }, [secondsLeft, cancelled]);
 
   return (
-    <div className="route-transition mx-auto flex min-h-screen max-w-2xl flex-col items-center gap-6 overflow-x-hidden px-6 py-10">
+    <div className="route-transition mx-auto flex min-h-screen max-w-2xl flex-col items-center gap-6 overflow-x-hidden px-4 py-10">
       <div className="flex flex-col items-center gap-3 text-center">
         <div className="animate-pop-in flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
           <CheckIcon />

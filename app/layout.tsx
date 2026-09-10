@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Baloo_2 } from "next/font/google";
 import { CartProvider } from "@/components/booking/CartProvider";
 import InstallPrompt from "@/components/InstallPrompt";
+import KeyboardScrollFix from "@/components/KeyboardScrollFix";
 import PwaServiceWorker from "@/components/PwaServiceWorker";
 import "./globals.css";
 
@@ -78,6 +79,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <CartProvider>{children}</CartProvider>
         <PwaServiceWorker />
         <InstallPrompt />
+        <KeyboardScrollFix />
       </body>
     </html>
   );

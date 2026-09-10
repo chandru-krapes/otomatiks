@@ -67,7 +67,7 @@ export default function PaymentSuccessClient({ event }: { event: Event }) {
 
   if (!reference || state.status === "not-found") {
     return (
-      <div className="route-transition mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center gap-4 px-6 text-center">
+      <div className="route-transition mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center gap-4 px-4 text-center">
         <EmptyState
           title="We couldn't find that booking"
           description={

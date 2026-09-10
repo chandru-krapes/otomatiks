@@ -17,7 +17,7 @@ function lineTotal(price: string, attendeeCount: number, kind: string | undefine
 
 // Floating cart affordance + slide-in panel for the event website
 export default function CartDrawer() {
-  const { lines, count, isOpen, open, close, removeLine, addAttendeeToLine, removeAttendeeFromLine } = useCart();
+  const { lines, count, isOpen, open, close, addTicket, removeLine, addAttendeeToLine, removeAttendeeFromLine } = useCart();
   const router = useRouter();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -118,7 +118,14 @@ export default function CartDrawer() {
                               <div className="min-w-0">
                                 <p className="truncate font-display text-sm font-bold text-primary">{line.ticket.name}</p>
                                 {isTeam && (
-                                  <Badge tone="brand" className="mt-1.5">
+                                  // `scale-90 origin-left` rather than overriding Badge's own
+                                  // padding/text-size utilities via `className` — Tailwind
+                                  // doesn't guarantee a later utility in the className string
+                                  // wins over one already baked into the shared component (it
+                                  // depends on the generated stylesheet's own rule order, not
+                                  // JSX order), so a transform is the only reliably-scoped way
+                                  // to shrink just this one instance.
+                                  <Badge tone="brand" className="mt-1.5 origin-left scale-90">
                                     Team
                                   </Badge>
                                 )}
@@ -134,31 +141,55 @@ export default function CartDrawer() {
                             </div>
 
                             <div className="mt-3 flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => removeAttendeeFromLine(line.id, line.attendees.length - 1)}
-                                  aria-label={`Remove one attendee from ${line.ticket.name}`}
-                                  className="focus-ring press flex h-7 w-7 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35"
-                                >
-                                  <MinusIcon />
-                                </button>
-                                <span className="w-6 text-center text-sm font-bold text-primary" aria-live="polite">
-                                  {line.attendees.length}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => addAttendeeToLine(line.id)}
-                                  disabled={atMax}
-                                  aria-label={`Add one more attendee to ${line.ticket.name}`}
-                                  className="focus-ring press flex h-7 w-7 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35 disabled:cursor-not-allowed disabled:opacity-40"
-                                >
-                                  <PlusIcon />
-                                </button>
-                                {isTeam && (
-                                  <span className="text-xs text-muted">/ {max} max</span>
-                                )}
-                              </div>
+                              {isTeam ? (
+                                // A team ticket is priced (and capacity-limited) per *team*, not
+                                // per member — this line's own member roster is entered in
+                                // checkout's attendee step (CartLineAttendees, "Add Teammate"),
+                                // capped there at `max`. A +/- stepper here used to reuse the
+                                // same addAttendeeToLine/removeAttendeeFromLine as individual
+                                // tickets, so tapping "+" quietly added a *teammate* to this one
+                                // team instead of another team ticket, and stopped working the
+                                // moment that team hit its size cap — reading as "stuck/broken"
+                                // for someone expecting it to add another ticket. "+" here adds
+                                // a whole new team line instead (same as the ticket card's own
+                                // "Add another ticket"); removing a team is the trash icon above.
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => addTicket(line.ticket)}
+                                    aria-label={`Add another ${line.ticket.name} team`}
+                                    className="focus-ring press flex h-7 w-7 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35"
+                                  >
+                                    <PlusIcon />
+                                  </button>
+                                  <span className="text-xs text-muted">
+                                    {line.attendees.length} / {max} members
+                                  </span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => removeAttendeeFromLine(line.id, line.attendees.length - 1)}
+                                    aria-label={`Remove one attendee from ${line.ticket.name}`}
+                                    className="focus-ring press flex h-7 w-7 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35"
+                                  >
+                                    <MinusIcon />
+                                  </button>
+                                  <span className="w-6 text-center text-sm font-bold text-primary" aria-live="polite">
+                                    {line.attendees.length}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => addAttendeeToLine(line.id)}
+                                    disabled={atMax}
+                                    aria-label={`Add one more attendee to ${line.ticket.name}`}
+                                    className="focus-ring press flex h-7 w-7 items-center justify-center rounded-full border border-primary/15 text-primary transition-colors hover:border-primary/35 disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    <PlusIcon />
+                                  </button>
+                                </div>
+                              )}
                               <span className="font-display text-sm font-bold text-primary">
                                 {formatCurrency(lineTotal(line.ticket.price, line.attendees.length, line.ticket.kind))}
                               </span>

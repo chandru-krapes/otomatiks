@@ -32,7 +32,7 @@ export default function AddToCartButton({
       <div className={`flex flex-col items-start gap-1.5 ${className}`}>
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant={variant} size={size} onClick={() => addTicket(ticket)} icon={addIcon}>
-            {teamCount > 0 ? "Add Another Team" : (label ?? "Add Team")}
+            {teamCount > 0 ? "Add Another Ticket" : (label ?? "Add Ticket")}
           </Button>
           {teamCount > 0 && (
             <Badge tone="success" className="animate-pop-in" key={teamCount}>

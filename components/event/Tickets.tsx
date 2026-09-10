@@ -59,10 +59,17 @@ function TicketCard({ ticket, featured }: { ticket: TicketType; featured?: boole
       // variable-length middle block below is a `flex-1 justify-center` region rather than a
       // plain stack, so that same slack collects as breathing room *around* the description
       // instead of one dead gap stranded right above the button.
+      // The lift/shadow below is scoped to `(hover: hover)` explicitly, not left as plain
+      // `hover:`/`focus-within:` — `focus-within` in particular isn't gated by hover capability
+      // at all, so it fired the instant "Add Ticket" was *tapped* (a tap focuses the button it
+      // lands on), shifting the whole card up 8px mid-touch. A card that moves out from under a
+      // finger between touchstart and touchend gets its tap cancelled by the browser instead of
+      // registering as a click — reliably needing a second tap to actually land one, exactly the
+      // "have to click twice" bug this was.
       className={`card group relative flex h-full flex-col items-center gap-5 overflow-hidden rounded-[1.75rem] px-7 pb-8 pt-8 text-center transition-all duration-[var(--dur-med)] ease-[var(--ease-out)] sm:px-8 ${
         soldOut
           ? "opacity-75"
-          : "hover:-translate-y-2 hover:shadow-[var(--elev-3)] focus-within:-translate-y-2"
+          : "[@media(hover:hover)]:hover:-translate-y-2 [@media(hover:hover)]:hover:shadow-[var(--elev-3)] [@media(hover:hover)]:focus-within:-translate-y-2"
       } ${featured && !soldOut ? "ring-2 ring-secondary/30" : ""}`}
     >
       {/* `.tech-grid-fine`'s denser cells read clearly at card scale — `.tech-grid`'s own

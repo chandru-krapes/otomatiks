@@ -183,7 +183,10 @@ export default function CheckoutForm({
 
           <div className="grid gap-5 sm:grid-cols-2">
             <TextField
-              label="Full name"
+              // "Parent Name" / "Tutor Name" / "Student Name" — makes explicit *whose* name this
+              // is for once "I am a" is picked, rather than a generic "Full name" that reads the
+              // same regardless of who's actually filling it in.
+              label={`${RELATIONSHIP_OPTIONS.find((option) => option.value === relationship)?.label ?? "Full"} Name`}
               required
               autoComplete="name"
               value={primary.name}

@@ -18,6 +18,8 @@ import { labelClass } from "./Field";
  * `onChange={(event) => setX(event.target.value)}` wiring needed zero
  * changes beyond swapping the import.
  */
+const CURRENT_YEAR = new Date().getFullYear();
+
 export default function DatePicker({
   label,
   value,
@@ -28,6 +30,12 @@ export default function DatePicker({
   placeholder = "Select date",
   fieldClassName = "",
   disabled,
+  // Month/day-by-day prev/next arrows alone made reaching a birth year decades back mean
+  // clicking "previous month" 300+ times — there was no way to jump to a year directly at all.
+  // Defaults suit a date-of-birth picker (both current call sites are one); pass different
+  // bounds for some other kind of date.
+  fromYear = CURRENT_YEAR - 100,
+  toYear = CURRENT_YEAR,
 }: {
   label: string;
   value: string;
@@ -40,6 +48,10 @@ export default function DatePicker({
   placeholder?: string;
   fieldClassName?: string;
   disabled?: boolean;
+  /** Earliest selectable year, inclusive — bounds the year dropdown below. */
+  fromYear?: number;
+  /** Latest selectable year, inclusive. */
+  toYear?: number;
 }) {
   const [open, setOpen] = useState(false);
   const date = parseLocalValue(value);
@@ -91,6 +103,9 @@ export default function DatePicker({
               selected={date}
               onSelect={handleSelect}
               showOutsideDays
+              captionLayout="dropdown"
+              startMonth={new Date(fromYear, 0)}
+              endMonth={new Date(toYear, 11)}
               className="!m-0 !p-0"
             />
           </Popover.Content>
