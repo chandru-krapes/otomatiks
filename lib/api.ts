@@ -60,7 +60,14 @@ export const API_BASE_URL = (
   process.env.NEXT_PUBLIC_EVENTS_API_URL ??
   process.env.EVENTS_API_URL ??
   "https://aurea-nonpatterned-nonsymphoniously.ngrok-free.dev"
-).replace(/\/$/, "");
+)
+  // A stray trailing space (easy to leave behind pasting a URL into .env.local/Vercel's env UI)
+  // survives `.replace(/\/$/, "")` untouched — the regex only matches a trailing slash, not
+  // whitespace — and then silently breaks every request built from this constant, since
+  // "https://host /api/v1/..." isn't a valid URL. `.trim()` first so that mistake fails loudly
+  // (or rather, doesn't happen at all) instead of every fetch call mysteriously rejecting.
+  .trim()
+  .replace(/\/$/, "");
 
 const EVENTS_ENDPOINT = `${API_BASE_URL}/api/v1/events/`;
 
