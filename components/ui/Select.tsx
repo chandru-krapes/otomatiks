@@ -138,6 +138,18 @@ export function Select({
   // entirely, so the trigger shows the right text before the panel has ever been opened.
   const selectedLabel = options.find((option) => option.value === radixValue)?.label;
 
+  // Only autofocus the filter input for a device with a precise pointer (mouse/trackpad) — see
+  // the two `requestAnimationFrame(() => searchRef.current?.focus())` call sites below. On a
+  // touchscreen, focusing an input the instant the panel opens pops the virtual keyboard up
+  // immediately; the keyboard sliding in resizes the viewport mid-open, which Radix's own
+  // dismiss-on-outside-interaction layer reads as an outside interaction and closes the panel it
+  // just opened — the whole thing flashes open-then-shut before a finger even lifts off the
+  // trigger. Checked once per mount (matchMedia's own result doesn't change for a given device),
+  // not on every render.
+  const [autoFocusSearch] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(pointer: fine)").matches,
+  );
+
   // Panel open state is tracked here (rather than left to Radix's own uncontrolled default)
   // purely so `searchable` can reset the filter text on close and grab focus on open — see
   // the search `<input>` below.
@@ -176,10 +188,11 @@ export function Select({
 
   // Radix moves focus onto the panel itself (typically the selected/first item) the moment it
   // opens — a `requestAnimationFrame` fires just after that so this steal actually wins,
-  // landing the cursor in the filter box instead of on an item.
+  // landing the cursor in the filter box instead of on an item. Skipped on touch devices — see
+  // `autoFocusSearch` above.
   useEffect(() => {
-    if (searchable && open) requestAnimationFrame(() => searchRef.current?.focus());
-  }, [searchable, open]);
+    if (searchable && open && autoFocusSearch) requestAnimationFrame(() => searchRef.current?.focus());
+  }, [searchable, open, autoFocusSearch]);
 
   return (
     <RadixSelect.Root
@@ -194,8 +207,9 @@ export function Select({
         if (next) {
           // Radix moves focus onto the panel itself (typically the selected/first item) the
           // moment it opens; a `requestAnimationFrame` fires just after that so this steal
-          // actually wins, landing the cursor in the filter box instead of on an item.
-          if (searchable) requestAnimationFrame(() => searchRef.current?.focus());
+          // actually wins, landing the cursor in the filter box instead of on an item. Skipped
+          // on touch devices — see `autoFocusSearch` above.
+          if (searchable && autoFocusSearch) requestAnimationFrame(() => searchRef.current?.focus());
         } else {
           setQuery("");
         }
